@@ -1,0 +1,9 @@
+[package]
+name = "resonators"
+version = "0.1.0"
+edition = "2024"
+description = "High-performance resonator bank for spectral analysis"
+license = "MIT"
+
+[dependencies]
+wide = "1.2"

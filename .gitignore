@@ -1,0 +1,11 @@
+/target
+**/.venv
+**/node_modules
+**/__pycache__
+*.pyc
+*.so
+*.dylib
+*.whl
+comparison_executed.ipynb
+.ipynb_checkpoints/
+pkg/
