@@ -1,4 +1,4 @@
-use resonators::{ResonatorBank, ResonatorConfig, SimdResonatorBank};
+use resonators::{ResonatorBank, ResonatorConfig};
 use wasm_bindgen::prelude::*;
 
 /// A resonator bank for use from JavaScript.
@@ -59,71 +59,6 @@ impl WasmResonatorBank {
     }
 
     /// Get smoothed output as split-complex: [re_0..re_N, im_0..im_N].
-    pub fn complex(&self) -> Vec<f32> {
-        let (re, im) = self.bank.complex();
-        let mut out = Vec::with_capacity(self.num * 2);
-        out.extend_from_slice(re);
-        out.extend_from_slice(im);
-        out
-    }
-
-    pub fn num_resonators(&self) -> usize {
-        self.num
-    }
-}
-
-/// A SIMD-optimized resonator bank for use from JavaScript.
-///
-/// Uses wide f32x4 SIMD. When compiled with RUSTFLAGS="-C target-feature=+simd128",
-/// this uses WASM SIMD128 instructions.
-#[wasm_bindgen]
-pub struct WasmSimdResonatorBank {
-    bank: SimdResonatorBank,
-    num: usize,
-}
-
-#[wasm_bindgen]
-impl WasmSimdResonatorBank {
-    #[wasm_bindgen(constructor)]
-    pub fn new(
-        frequencies: &[f32],
-        alphas: &[f32],
-        betas: &[f32],
-        sample_rate: f32,
-    ) -> WasmSimdResonatorBank {
-        let configs: Vec<ResonatorConfig> = frequencies
-            .iter()
-            .zip(alphas.iter())
-            .zip(betas.iter())
-            .map(|((&f, &a), &b)| ResonatorConfig::new(f, a, b))
-            .collect();
-        let num = configs.len();
-        WasmSimdResonatorBank {
-            bank: SimdResonatorBank::new(&configs, sample_rate),
-            num,
-        }
-    }
-
-    pub fn update_frame(&mut self, frame: &[f32]) {
-        self.bank.update_frame(frame);
-    }
-
-    pub fn powers(&self) -> Vec<f32> {
-        let (re, im) = self.bank.complex();
-        re.iter()
-            .zip(im.iter())
-            .map(|(r, i)| r * r + i * i)
-            .collect()
-    }
-
-    pub fn amplitudes(&self) -> Vec<f32> {
-        let (re, im) = self.bank.complex();
-        re.iter()
-            .zip(im.iter())
-            .map(|(r, i)| (r * r + i * i).sqrt())
-            .collect()
-    }
-
     pub fn complex(&self) -> Vec<f32> {
         let (re, im) = self.bank.complex();
         let mut out = Vec::with_capacity(self.num * 2);

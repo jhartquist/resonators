@@ -1,13 +1,12 @@
 from resonators._resonators import (
-    PyResonator as Resonator,
-    resonate_naive,
+    resonate,
     alpha_heuristic,
     midi_piano_frequencies,
     log_frequencies,
 )
 
 __all__ = [
-    "Resonator",
+    "resonate",
     "alpha_heuristic",
     "midi_piano_frequencies",
     "log_frequencies",

@@ -155,14 +155,24 @@ impl ResonatorBank {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Resonator;
     use std::f32::consts::TAU;
 
-    /// Bank output must match N individual Resonators.
     #[test]
-    fn test_bank_matches_individual_resonators() {
+    fn test_silence_produces_zero() {
         let sr = 44100.0;
-        let configs: Vec<ResonatorConfig> = [440.0, 880.0, 1760.0]
+        let configs = vec![ResonatorConfig::with_alpha(440.0, 0.01)];
+        let mut bank = ResonatorBank::new(&configs, sr);
+
+        bank.update_frame(&vec![0.0; 1024]);
+
+        assert_eq!(bank.power(0), 0.0);
+    }
+
+    #[test]
+    fn test_peak_at_matching_frequency() {
+        let sr = 44100.0;
+        let freqs = [220.0, 440.0, 880.0];
+        let configs: Vec<ResonatorConfig> = freqs
             .iter()
             .map(|&f| {
                 let alpha = crate::dynamics::alpha_heuristic(f, sr);
@@ -171,44 +181,69 @@ mod tests {
             .collect();
 
         let mut bank = ResonatorBank::new(&configs, sr);
-        let mut singles: Vec<Resonator> = configs
-            .iter()
-            .map(|c| Resonator::new(*c, sr))
-            .collect();
 
-        // Process 2 frames of 256 samples
-        for frame_idx in 0..2 {
-            let frame: Vec<f32> = (0..256)
-                .map(|i| {
-                    let t = (frame_idx * 256 + i) as f32;
-                    (TAU * 440.0 * t / sr).cos()
-                })
-                .collect();
-
-            bank.update_frame(&frame);
-            for res in singles.iter_mut() {
-                res.update_frame(&frame);
-            }
+        // Feed 440 Hz sine for 1 second
+        let n = sr as usize;
+        for chunk in (0..n)
+            .map(|i| (TAU * 440.0 * i as f32 / sr).cos())
+            .collect::<Vec<f32>>()
+            .chunks(256)
+        {
+            bank.update_frame(chunk);
         }
 
-        // Compare outputs
-        let (bank_re, bank_im) = bank.complex();
-        for (k, res) in singles.iter().enumerate() {
-            let (re, im) = res.complex();
-            assert!(
-                (bank_re[k] - re).abs() < 1e-6,
-                "bin {} re: bank={} single={}",
-                k,
-                bank_re[k],
-                re
-            );
-            assert!(
-                (bank_im[k] - im).abs() < 1e-6,
-                "bin {} im: bank={} single={}",
-                k,
-                bank_im[k],
-                im
-            );
+        // 440 Hz bin (index 1) should be strongest
+        let powers: Vec<f32> = (0..3).map(|i| bank.power(i)).collect();
+        assert!(
+            powers[1] > powers[0] * 10.0,
+            "440 Hz bin should dominate 220 Hz: {:?}",
+            powers
+        );
+        assert!(
+            powers[1] > powers[2] * 10.0,
+            "440 Hz bin should dominate 880 Hz: {:?}",
+            powers
+        );
+    }
+
+    #[test]
+    fn test_power_converges_to_theoretical_max() {
+        let sr = 44100.0;
+        let freq = 440.0;
+        let alpha = crate::dynamics::alpha_heuristic(freq, sr);
+        let configs = vec![ResonatorConfig::with_alpha(freq, alpha)];
+        let mut bank = ResonatorBank::new(&configs, sr);
+
+        // Feed matching sine for 2 seconds (well past convergence)
+        let n = 2 * sr as usize;
+        for chunk in (0..n)
+            .map(|i| (TAU * freq * i as f32 / sr).cos())
+            .collect::<Vec<f32>>()
+            .chunks(256)
+        {
+            bank.update_frame(chunk);
         }
+
+        // Theoretical max power for cosine input is 0.25
+        let power = bank.power(0);
+        assert!(
+            (power - 0.25).abs() < 0.01,
+            "power should converge near 0.25, got {}",
+            power
+        );
+    }
+
+    #[test]
+    fn test_accessors() {
+        let sr = 44100.0;
+        let configs = vec![
+            ResonatorConfig::with_alpha(440.0, 0.01),
+            ResonatorConfig::new(880.0, 0.02, 0.03),
+        ];
+        let bank = ResonatorBank::new(&configs, sr);
+
+        assert_eq!(bank.num_resonators(), 2);
+        assert_eq!(bank.sample_rate(), sr);
+        assert_eq!(bank.frequencies(), &[440.0, 880.0]);
     }
 }

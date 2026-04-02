@@ -6,4 +6,3 @@ description = "High-performance resonator bank for spectral analysis"
 license = "MIT"
 
 [dependencies]
-wide = "1.2"
