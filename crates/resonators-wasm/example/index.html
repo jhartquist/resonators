@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>resonators - WASM test</title>
+    <style>
+        body { font-family: monospace; max-width: 800px; margin: 2em auto; line-height: 1.6; }
+        pre { background: #f4f4f4; padding: 1em; overflow-x: auto; }
+        canvas { border: 1px solid #ccc; display: block; margin: 1em 0; }
+        button { font-size: 1em; padding: 0.5em 1em; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>resonators WASM test</h1>
+    <p>Open the browser console to see detailed output.</p>
+    <button id="run">Run benchmark</button>
+    <pre id="output">Loading WASM...</pre>
+    <canvas id="spectrogram" width="800" height="300"></canvas>
+
+    <script type="module">
+        import init, {
+            WasmResonatorBank,
+            WasmSimdResonatorBank,
+            resonate,
+            alpha_heuristic,
+            midi_piano_frequencies,
+        } from '../pkg/resonators_wasm.js';
+
+        const output = document.getElementById('output');
+        const log = (msg) => {
+            output.textContent += msg + '\n';
+            console.log(msg);
+        };
+
+        await init();
+        output.textContent = '';
+        log('WASM loaded successfully');
+
+        // Setup: MIDI piano range, 88 bins
+        const SR = 44100;
+        const HOP = 256;
+        const DURATION = 5;
+        const N_SAMPLES = SR * DURATION;
+
+        const freqs = midi_piano_frequencies(440.0);
+        const alphas = alpha_heuristic(freqs, SR);
+        const betas = new Float32Array(alphas);
+        const N_BINS = freqs.length;
+
+        log(`Bank: ${N_BINS} resonators, ${freqs[0].toFixed(1)} Hz - ${freqs[N_BINS-1].toFixed(1)} Hz`);
+        log(`Signal: ${N_SAMPLES.toLocaleString()} samples (${DURATION}s @ ${SR} Hz)`);
+        log(`Hop: ${HOP} samples`);
+
+        // Generate log chirp
+        const signal = new Float32Array(N_SAMPLES);
+        const f0 = freqs[0], f1 = freqs[N_BINS - 1];
+        const logRatio = Math.log(f1 / f0);
+        for (let i = 0; i < N_SAMPLES; i++) {
+            const t = i / SR;
+            signal[i] = Math.cos(2 * Math.PI * f0 * DURATION / logRatio * (Math.exp(t / DURATION * logRatio) - 1));
+        }
+
+        function bench(name, fn, runs = 5) {
+            // Warmup
+            fn();
+            const times = [];
+            for (let i = 0; i < runs; i++) {
+                const start = performance.now();
+                fn();
+                times.push(performance.now() - start);
+            }
+            const mean = times.reduce((a, b) => a + b) / times.length;
+            const min = Math.min(...times);
+            const throughput = N_SAMPLES / (mean / 1000);
+            log(`${name}: mean=${mean.toFixed(2)}ms  min=${min.toFixed(2)}ms  throughput=${Math.round(throughput).toLocaleString()} samples/s`);
+            return mean;
+        }
+
+        document.getElementById('run').addEventListener('click', () => {
+            output.textContent = '';
+            log('Running benchmarks...\n');
+
+            // Batch processing
+            const batchMs = bench('resonate() batch', () => {
+                return resonate(signal, SR, freqs, alphas, betas, HOP);
+            });
+
+            // Stateful bank (scalar SoA)
+            const bankMs = bench('WasmResonatorBank', () => {
+                const bank = new WasmResonatorBank(freqs, alphas, betas, SR);
+                const nSlices = Math.floor(N_SAMPLES / HOP);
+                for (let s = 0; s < nSlices; s++) {
+                    bank.update_frame(signal.subarray(s * HOP, (s + 1) * HOP));
+                }
+                const result = bank.powers();
+                bank.free();
+                return result;
+            });
+
+            // Stateful SIMD bank
+            const simdMs = bench('WasmSimdResonatorBank', () => {
+                const bank = new WasmSimdResonatorBank(freqs, alphas, betas, SR);
+                const nSlices = Math.floor(N_SAMPLES / HOP);
+                for (let s = 0; s < nSlices; s++) {
+                    bank.update_frame(signal.subarray(s * HOP, (s + 1) * HOP));
+                }
+                const result = bank.powers();
+                bank.free();
+                return result;
+            });
+
+            // Pure JS reference
+            const jsMs = bench('Pure JS (precomputed phasors)', () => {
+                const n = freqs.length;
+                const angles = new Float32Array(n);
+                for (let k = 0; k < n; k++) angles[k] = -2 * Math.PI * freqs[k] / SR;
+                const w_re = angles.map(Math.cos);
+                const w_im = angles.map(Math.sin);
+                const z_re = new Float32Array(n).fill(1);
+                const z_im = new Float32Array(n);
+                const r_re = new Float32Array(n);
+                const r_im = new Float32Array(n);
+                const rr_re = new Float32Array(n);
+                const rr_im = new Float32Array(n);
+                const oma = alphas.map(a => 1 - a);
+                const omb = betas.map(b => 1 - b);
+
+                const nSlices = Math.floor(N_SAMPLES / HOP);
+                for (let s = 0; s < nSlices; s++) {
+                    for (let j = 0; j < HOP; j++) {
+                        const x = signal[s * HOP + j];
+                        for (let k = 0; k < n; k++) {
+                            r_re[k] = oma[k] * r_re[k] + alphas[k] * x * z_re[k];
+                            r_im[k] = oma[k] * r_im[k] + alphas[k] * x * z_im[k];
+                            rr_re[k] = omb[k] * rr_re[k] + betas[k] * r_re[k];
+                            rr_im[k] = omb[k] * rr_im[k] + betas[k] * r_im[k];
+                            const zr = z_re[k], zi = z_im[k];
+                            z_re[k] = zr * w_re[k] - zi * w_im[k];
+                            z_im[k] = zr * w_im[k] + zi * w_re[k];
+                        }
+                    }
+                }
+                return rr_re;
+            }, 2);
+
+            log(`\n--- Summary ---`);
+            log(`Pure JS:              ${jsMs.toFixed(1)}ms`);
+            log(`WASM batch:           ${batchMs.toFixed(1)}ms  (${(jsMs/batchMs).toFixed(1)}x vs JS)`);
+            log(`WASM bank (scalar):   ${bankMs.toFixed(1)}ms  (${(jsMs/bankMs).toFixed(1)}x vs JS)`);
+            log(`WASM bank (SIMD):     ${simdMs.toFixed(1)}ms  (${(jsMs/simdMs).toFixed(1)}x vs JS)`);
+
+            // Draw spectrogram from the batch result
+            const result = resonate(signal, SR, freqs, alphas, betas, HOP);
+            drawSpectrogram(result, N_BINS, Math.floor(N_SAMPLES / HOP));
+        });
+
+        function drawSpectrogram(data, nBins, nSlices) {
+            const canvas = document.getElementById('spectrogram');
+            const ctx = canvas.getContext('2d');
+            canvas.width = nSlices;
+            canvas.height = nBins;
+            const img = ctx.createImageData(nSlices, nBins);
+
+            // Compute powers and find max
+            let maxPow = 0;
+            const powers = new Float32Array(nSlices * nBins);
+            for (let s = 0; s < nSlices; s++) {
+                const offset = s * 2 * nBins;
+                for (let k = 0; k < nBins; k++) {
+                    const re = data[offset + k];
+                    const im = data[offset + nBins + k];
+                    const p = re * re + im * im;
+                    powers[s * nBins + k] = p;
+                    if (p > maxPow) maxPow = p;
+                }
+            }
+
+            // Draw (log scale, bottom = low freq)
+            for (let s = 0; s < nSlices; s++) {
+                for (let k = 0; k < nBins; k++) {
+                    const p = powers[s * nBins + k];
+                    const dB = 10 * Math.log10(p / maxPow + 1e-10);
+                    const val = Math.max(0, Math.min(255, ((dB + 60) / 60) * 255));
+                    const row = nBins - 1 - k;
+                    const idx = (row * nSlices + s) * 4;
+                    img.data[idx] = val;
+                    img.data[idx + 1] = val * 0.7;
+                    img.data[idx + 2] = val * 0.3;
+                    img.data[idx + 3] = 255;
+                }
+            }
+            ctx.putImageData(img, 0, 0);
+        }
+    </script>
+</body>
+</html>
