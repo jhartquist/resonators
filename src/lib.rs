@@ -2,6 +2,19 @@ use std::f32::consts::PI;
 
 const STABILIZE_EVERY: u64 = 256;
 
+#[derive(Debug, Clone, Copy)]
+pub struct ResonatorConfig {
+    pub freq: f32,
+    pub alpha: f32,
+    pub beta: f32,
+}
+
+impl ResonatorConfig {
+    pub fn new(freq: f32, alpha: f32, beta: f32) -> Self {
+        Self { freq, alpha, beta }
+    }
+}
+
 pub struct Resonator {
     freq: f32,
     alpha: f32,
@@ -28,7 +41,8 @@ pub struct Resonator {
 }
 
 impl Resonator {
-    pub fn new(freq: f32, alpha: f32, beta: f32, sample_rate: f32) -> Self {
+    pub fn new(config: ResonatorConfig, sample_rate: f32) -> Self {
+        let ResonatorConfig { freq, alpha, beta } = config;
         let phasor_angle = -2.0 * PI * freq / sample_rate;
         Self {
             freq,
@@ -95,7 +109,7 @@ mod tests {
 
     #[test]
     fn resonator_new() {
-        let resonator = Resonator::new(440.0, 1.0, 2.0, 44100.0);
+        let resonator = Resonator::new(ResonatorConfig::new(440.0, 1.0, 2.0), 44100.0);
         assert_eq!(resonator.freq, 440.0);
         assert_eq!(resonator.alpha, 1.0);
         assert_eq!(resonator.beta, 2.0);
@@ -103,7 +117,7 @@ mod tests {
 
     #[test]
     fn power_is_magnitude_squared() {
-        let mut r = Resonator::new(440.0, 1.0, 1.0, 44100.0);
+        let mut r = Resonator::new(ResonatorConfig::new(440.0, 1.0, 1.0), 44100.0);
         r.rr_re = 3.0;
         r.rr_im = 4.0;
         assert_eq!(r.power(), 25.0);
@@ -111,7 +125,7 @@ mod tests {
 
     #[test]
     fn magnitude_is_sqrt_of_power() {
-        let mut r = Resonator::new(440.0, 1.0, 1.0, 44100.0);
+        let mut r = Resonator::new(ResonatorConfig::new(440.0, 1.0, 1.0), 44100.0);
         r.rr_re = 3.0;
         r.rr_im = 4.0;
         assert_eq!(r.magnitude(), 5.0);
@@ -119,7 +133,7 @@ mod tests {
 
     #[test]
     fn phase_uses_atan2() {
-        let mut r = Resonator::new(440.0, 1.0, 1.0, 44100.0);
+        let mut r = Resonator::new(ResonatorConfig::new(440.0, 1.0, 1.0), 44100.0);
         r.rr_re = 1.0;
         r.rr_im = 0.0;
         assert_eq!(r.phase(), 0.0);
@@ -157,9 +171,11 @@ mod tests {
 
         for bin in 0..n_bins {
             let mut resonator = Resonator::new(
-                freqs[bin],
-                alphas[bin],
-                alphas[bin], // beta = alpha
+                ResonatorConfig::new(
+                    freqs[bin],
+                    alphas[bin],
+                    alphas[bin], // beta == alpha
+                ),
                 SAMPLE_RATE,
             );
 
