@@ -70,8 +70,20 @@ impl Resonator {
         }
     }
 
-    pub fn complex(&self) -> (f32, f32) {
-        (self.rr_re, self.rr_im)
+    pub fn freq(&self) -> f32 {
+        self.freq
+    }
+
+    pub fn power(&self) -> f32 {
+        self.rr_re * self.rr_re + self.rr_im * self.rr_im
+    }
+
+    pub fn magnitude(&self) -> f32 {
+        self.power().sqrt()
+    }
+
+    pub fn phase(&self) -> f32 {
+        self.rr_im.atan2(self.rr_re)
     }
 }
 
@@ -87,6 +99,38 @@ mod tests {
         assert_eq!(resonator.freq, 440.0);
         assert_eq!(resonator.alpha, 1.0);
         assert_eq!(resonator.beta, 2.0);
+    }
+
+    #[test]
+    fn power_is_magnitude_squared() {
+        let mut r = Resonator::new(440.0, 1.0, 1.0, 44100.0);
+        r.rr_re = 3.0;
+        r.rr_im = 4.0;
+        assert_eq!(r.power(), 25.0);
+    }
+
+    #[test]
+    fn magnitude_is_sqrt_of_power() {
+        let mut r = Resonator::new(440.0, 1.0, 1.0, 44100.0);
+        r.rr_re = 3.0;
+        r.rr_im = 4.0;
+        assert_eq!(r.magnitude(), 5.0);
+    }
+
+    #[test]
+    fn phase_uses_atan2() {
+        let mut r = Resonator::new(440.0, 1.0, 1.0, 44100.0);
+        r.rr_re = 1.0;
+        r.rr_im = 0.0;
+        assert_eq!(r.phase(), 0.0);
+
+        r.rr_re = 0.0;
+        r.rr_im = 1.0;
+        assert!((r.phase() - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+
+        r.rr_re = -1.0;
+        r.rr_im = 0.0;
+        assert!((r.phase() - PI).abs() < 1e-6);
     }
 
     #[test]
@@ -124,7 +168,8 @@ mod tests {
                     let sample = signal[frame * HOP_SIZE + i];
                     resonator.process_sample(sample);
                 }
-                let (re, im) = resonator.complex();
+                let re = resonator.rr_re;
+                let im = resonator.rr_im;
 
                 let expected_re = ref_flat[idx(frame, 0, bin)];
                 let expected_im = ref_flat[idx(frame, 1, bin)];
