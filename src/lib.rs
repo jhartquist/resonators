@@ -101,6 +101,63 @@ impl Resonator {
     }
 }
 
+pub struct ResonatorBank {
+    resonators: Vec<Resonator>,
+}
+
+impl ResonatorBank {
+    pub fn new(configs: &[ResonatorConfig], sample_rate: f32) -> Self {
+        Self {
+            resonators: configs
+                .iter()
+                .map(|&config| Resonator::new(config, sample_rate))
+                .collect(),
+        }
+    }
+
+    pub fn process_sample(&mut self, sample: f32) {
+        for r in &mut self.resonators {
+            r.process_sample(sample);
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.resonators.len()
+    }
+
+    pub fn freq(&self, i: usize) -> f32 {
+        self.resonators[i].freq()
+    }
+
+    pub fn magnitude(&self, i: usize) -> f32 {
+        self.resonators[i].magnitude()
+    }
+
+    pub fn phase(&self, i: usize) -> f32 {
+        self.resonators[i].phase()
+    }
+
+    pub fn power(&self, i: usize) -> f32 {
+        self.resonators[i].power()
+    }
+
+    pub fn frequencies(&self) -> Vec<f32> {
+        self.resonators.iter().map(|r| r.freq()).collect()
+    }
+
+    pub fn magnitudes(&self) -> Vec<f32> {
+        self.resonators.iter().map(|r| r.magnitude()).collect()
+    }
+
+    pub fn phases(&self) -> Vec<f32> {
+        self.resonators.iter().map(|r| r.phase()).collect()
+    }
+
+    pub fn powers(&self) -> Vec<f32> {
+        self.resonators.iter().map(|r| r.power()).collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use npyz::npz::NpzArchive;
@@ -169,34 +226,32 @@ mod tests {
         let idx =
             |frame: usize, part: usize, bin: usize| (frame * 2 * n_bins) + (part * n_bins) + bin;
 
-        for bin in 0..n_bins {
-            let mut resonator = Resonator::new(
-                ResonatorConfig::new(
-                    freqs[bin],
-                    alphas[bin],
-                    alphas[bin], // beta == alpha
-                ),
-                SAMPLE_RATE,
-            );
+        let configs: Vec<ResonatorConfig> = freqs
+            .iter()
+            .zip(&alphas)
+            .map(|(&f, &a)| ResonatorConfig::new(f, a, a))
+            .collect();
+        let mut bank = ResonatorBank::new(&configs, SAMPLE_RATE);
 
-            for frame in 0..n_frames {
-                for i in 0..HOP_SIZE {
-                    let sample = signal[frame * HOP_SIZE + i];
-                    resonator.process_sample(sample);
-                }
-                let re = resonator.rr_re;
-                let im = resonator.rr_im;
+        for frame in 0..n_frames {
+            for i in 0..HOP_SIZE {
+                bank.process_sample(signal[frame * HOP_SIZE + i]);
+            }
+
+            for (bin, r) in bank.resonators.iter().enumerate() {
+                let re = r.rr_re;
+                let im = r.rr_im;
 
                 let expected_re = ref_flat[idx(frame, 0, bin)];
                 let expected_im = ref_flat[idx(frame, 1, bin)];
 
                 assert!(
                     (re - expected_re).abs() < 1e-3,
-                    "frame {frame} re: {re} vs {expected_re}"
+                    "frame {frame} bin {bin} re: {re} vs {expected_re}"
                 );
                 assert!(
                     (im - expected_im).abs() < 1e-3,
-                    "frame {frame} im: {im} vs {expected_im}"
+                    "frame {frame} bin {bin} im: {im} vs {expected_im}"
                 );
             }
         }
