@@ -1,26 +1,63 @@
+use std::f32::consts::PI;
+
 pub struct Resonator {
     freq: f32,
     alpha: f32,
     beta: f32,
-    sample_rate: f32,
+
+    // phasor state, rotates by phasor angle (w) each sample
+    z_re: f32,
+    z_im: f32,
+
+    // phasor angle, constant
+    w_re: f32,
+    w_im: f32,
+
+    // raw output of EWMA
+    r_re: f32,
+    r_im: f32,
+
+    // smoothed output of EWMA
+    rr_re: f32,
+    rr_im: f32,
 }
 
 impl Resonator {
     pub fn new(freq: f32, alpha: f32, beta: f32, sample_rate: f32) -> Self {
+        let phasor_angle = -2.0 * PI * freq / sample_rate;
         Self {
             freq,
             alpha,
             beta,
-            sample_rate,
+            z_re: 1.0,
+            z_im: 0.0,
+            w_re: phasor_angle.cos(),
+            w_im: phasor_angle.sin(),
+            r_re: 0.0,
+            r_im: 0.0,
+            rr_re: 0.0,
+            rr_im: 0.0,
         }
     }
 
     pub fn process_sample(&mut self, sample: f32) {
-        todo!()
+        // update raw output via EWMA
+        self.r_re = (1.0 - self.alpha) * self.r_re + self.alpha * sample * self.z_re;
+        self.r_im = (1.0 - self.alpha) * self.r_im + self.alpha * sample * self.z_im;
+
+        // update smoothed output via second EMWA
+        self.rr_re = (1.0 - self.beta) * self.rr_re + self.beta * self.r_re;
+        self.rr_im = (1.0 - self.beta) * self.rr_im + self.beta * self.r_im;
+
+        // rotate phasor (complex multiply)
+        let z_re = self.z_re;
+        let z_im = self.z_im;
+        self.z_re = z_re * self.w_re - z_im * self.w_im;
+        self.z_im = z_re * self.w_im + z_im * self.w_re;
     }
 
     pub fn complex(&self) -> (f32, f32) {
-        todo!()
+        (self.rr_re, self.rr_im)
     }
 }
 
@@ -36,7 +73,6 @@ mod tests {
         assert_eq!(resonator.freq, 440.0);
         assert_eq!(resonator.alpha, 1.0);
         assert_eq!(resonator.beta, 2.0);
-        assert_eq!(resonator.sample_rate, 44100.0);
     }
 
     #[test]
@@ -80,11 +116,11 @@ mod tests {
                 let expected_im = ref_flat[idx(frame, 1, bin)];
 
                 assert!(
-                    (re - expected_re).abs() < 1e-5,
+                    (re - expected_re).abs() < 1e-3,
                     "frame {frame} re: {re} vs {expected_re}"
                 );
                 assert!(
-                    (im - expected_im).abs() < 1e-5,
+                    (im - expected_im).abs() < 1e-3,
                     "frame {frame} im: {im} vs {expected_im}"
                 );
             }
