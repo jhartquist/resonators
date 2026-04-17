@@ -1,5 +1,7 @@
 use std::f32::consts::PI;
 
+const STABILIZE_EVERY: u64 = 256;
+
 pub struct Resonator {
     freq: f32,
     alpha: f32,
@@ -20,6 +22,9 @@ pub struct Resonator {
     // smoothed output of EWMA
     rr_re: f32,
     rr_im: f32,
+
+    // tracked for stabilization
+    sample_count: u64,
 }
 
 impl Resonator {
@@ -37,6 +42,7 @@ impl Resonator {
             r_im: 0.0,
             rr_re: 0.0,
             rr_im: 0.0,
+            sample_count: 0,
         }
     }
 
@@ -54,6 +60,14 @@ impl Resonator {
         let z_im = self.z_im;
         self.z_re = z_re * self.w_re - z_im * self.w_im;
         self.z_im = z_re * self.w_im + z_im * self.w_re;
+
+        // occasional phasor stabilization
+        self.sample_count += 1;
+        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+            let mag = (self.z_re * self.z_re + self.z_im * self.z_im).sqrt();
+            self.z_re /= mag;
+            self.z_im /= mag;
+        }
     }
 
     pub fn complex(&self) -> (f32, f32) {
