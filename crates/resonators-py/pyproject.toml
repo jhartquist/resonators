@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "resonators"
+version = "0.1.0"
+description = "Real-time complex phasor demodulation resonator bank"
+requires-python = ">=3.9"
+dependencies = ["numpy"]
+license = { text = "MIT OR Apache-2.0" }
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Multimedia :: Sound/Audio :: Analysis",
+    "Topic :: Scientific/Engineering",
+]
+
+[tool.maturin]
+module-name = "resonators"
+features = ["pyo3/extension-module"]

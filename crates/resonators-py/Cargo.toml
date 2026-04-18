@@ -1,0 +1,13 @@
+[package]
+name = "resonators-py"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "resonators"
+crate-type = ["cdylib"]
+
+[dependencies]
+resonators = { path = "../resonators" }
+pyo3 = { version = "0.28", features = ["extension-module", "abi3-py39"] }
+numpy = "0.28"

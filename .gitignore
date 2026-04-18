@@ -1,2 +1,10 @@
 /target
 Cargo.lock
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
