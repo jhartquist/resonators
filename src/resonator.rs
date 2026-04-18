@@ -110,6 +110,7 @@ impl Resonator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alpha_heuristic;
 
     #[test]
     fn power_is_magnitude_squared() {
@@ -141,6 +142,23 @@ mod tests {
         r.rr_re = -1.0;
         r.rr_im = 0.0;
         assert!((r.phase() - PI).abs() < 1e-6);
+    }
+
+    #[test]
+    fn matched_sine_power_converges_near_one_quarter() {
+        let sr = 44100.0;
+        let freq = 440.0;
+        let alpha = alpha_heuristic(freq, sr);
+        let mut r = Resonator::new(ResonatorConfig::new(freq, alpha, alpha), sr);
+        for i in 0..2 * sr as usize {
+            let t = i as f32 / sr;
+            r.process_sample((2.0 * PI * freq * t).cos());
+        }
+        assert!(
+            (r.power() - 0.25).abs() < 0.01,
+            "power should be ~0.25, got {}",
+            r.power()
+        );
     }
 
     #[test]

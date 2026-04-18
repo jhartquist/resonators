@@ -159,6 +159,46 @@ impl ResonatorBank {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alpha_heuristic;
+
+    #[test]
+    fn matched_sine_power_converges_near_one_quarter() {
+        let sr = 44100.0;
+        let freq = 440.0;
+        let alpha = alpha_heuristic(freq, sr);
+        let configs = vec![ResonatorConfig::new(freq, alpha, alpha)];
+        let mut bank = ResonatorBank::new(&configs, sr);
+        for i in 0..2 * sr as usize {
+            let t = i as f32 / sr;
+            bank.process_sample((2.0 * PI * freq * t).cos());
+        }
+        assert!(
+            (bank.power(0) - 0.25).abs() < 0.01,
+            "power should be ~0.25, got {}",
+            bank.power(0)
+        );
+    }
+
+    #[test]
+    fn peaks_at_matched_bin() {
+        let sr = 44100.0;
+        let freqs = [220.0, 440.0, 880.0];
+        let configs: Vec<_> = freqs
+            .iter()
+            .map(|&f| {
+                let a = alpha_heuristic(f, sr);
+                ResonatorConfig::new(f, a, a)
+            })
+            .collect();
+        let mut bank = ResonatorBank::new(&configs, sr);
+        for i in 0..sr as usize {
+            let t = i as f32 / sr;
+            bank.process_sample((2.0 * PI * 440.0 * t).cos());
+        }
+        let p = bank.powers();
+        assert!(p[1] > p[0] * 10.0, "440 should dominate 220: {p:?}");
+        assert!(p[1] > p[2] * 10.0, "440 should dominate 880: {p:?}");
+    }
 
     #[test]
     fn reset_clears_state() {
