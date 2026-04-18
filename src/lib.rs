@@ -2,6 +2,11 @@ use std::f32::consts::PI;
 
 const STABILIZE_EVERY: u64 = 256;
 
+pub fn alpha_heuristic(freq: f32, sample_rate: f32) -> f32 {
+    let dt = 1.0 / sample_rate;
+    1.0 - (-dt * freq / (1.0 + freq).log10()).exp()
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ResonatorConfig {
     pub freq: f32,
@@ -204,6 +209,20 @@ mod tests {
         r.rr_re = -1.0;
         r.rr_im = 0.0;
         assert!((r.phase() - PI).abs() < 1e-6);
+    }
+
+    #[test]
+    fn alpha_heuristic_in_valid_range() {
+        for &freq in &[27.5, 440.0, 4186.0] {
+            let a = alpha_heuristic(freq, 44100.0);
+            assert!(a > 0.0 && a < 1.0, "alpha({freq}) = {a}");
+        }
+    }
+
+    #[test]
+    fn alpha_heuristic_increases_with_freq() {
+        let sr = 44100.0;
+        assert!(alpha_heuristic(4000.0, sr) > alpha_heuristic(100.0, sr));
     }
 
     #[test]
