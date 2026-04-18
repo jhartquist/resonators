@@ -16,7 +16,7 @@ struct Fixture {
 
 impl Fixture {
     fn load() -> Self {
-        let npz_path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/chirp_88.npz");
+        let npz_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fixtures/chirp_88.npz");
         let mut npz = NpzArchive::open(npz_path).unwrap();
 
         let signal: Vec<f32> = npz.by_name("signal").unwrap().unwrap().into_vec().unwrap();

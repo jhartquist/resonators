@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 SR = 44100.0
 HOP = 256
 DURATION = 1.0
-OUT = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
+OUT = Path(__file__).resolve().parent.parent / "fixtures"
 
 # 88 piano keys: MIDI 21 (A0) through 108 (C8)
 midi = np.arange(21, 109)
