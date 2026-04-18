@@ -70,6 +70,13 @@ impl Resonator {
         }
     }
 
+    #[inline]
+    pub fn process_samples(&mut self, samples: &[f32]) {
+        for &s in samples {
+            self.process_sample(s);
+        }
+    }
+
     fn stabilize(&mut self) {
         let mag = (self.z_re * self.z_re + self.z_im * self.z_im).sqrt();
         self.z_re /= mag;
@@ -150,10 +157,10 @@ mod tests {
         let freq = 440.0;
         let alpha = alpha_heuristic(freq, sr);
         let mut r = Resonator::new(ResonatorConfig::new(freq, alpha, alpha), sr);
-        for i in 0..2 * sr as usize {
-            let t = i as f32 / sr;
-            r.process_sample((2.0 * PI * freq * t).cos());
-        }
+        let signal: Vec<f32> = (0..2 * sr as usize)
+            .map(|i| (2.0 * PI * freq * i as f32 / sr).cos())
+            .collect();
+        r.process_samples(&signal);
         assert!(
             (r.power() - 0.25).abs() < 0.01,
             "power should be ~0.25, got {}",
@@ -164,9 +171,7 @@ mod tests {
     #[test]
     fn reset_clears_state() {
         let mut r = Resonator::new(ResonatorConfig::new(440.0, 0.01, 0.01), 44100.0);
-        for _ in 0..1000 {
-            r.process_sample(0.5);
-        }
+        r.process_samples(&vec![0.5; 1000]);
         assert!(r.magnitude() > 0.0);
         r.reset();
         assert_eq!(r.complex(), (0.0, 0.0));

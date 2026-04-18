@@ -93,6 +93,13 @@ impl ResonatorBank {
         }
     }
 
+    #[inline]
+    pub fn process_samples(&mut self, samples: &[f32]) {
+        for &s in samples {
+            self.process_sample(s);
+        }
+    }
+
     fn stabilize(&mut self) {
         for k in 0..self.n_resonators {
             let inv_mag = 1.0 / (self.z_re[k] * self.z_re[k] + self.z_im[k] * self.z_im[k]).sqrt();
@@ -168,10 +175,10 @@ mod tests {
         let alpha = alpha_heuristic(freq, sr);
         let configs = vec![ResonatorConfig::new(freq, alpha, alpha)];
         let mut bank = ResonatorBank::new(&configs, sr);
-        for i in 0..2 * sr as usize {
-            let t = i as f32 / sr;
-            bank.process_sample((2.0 * PI * freq * t).cos());
-        }
+        let signal: Vec<f32> = (0..2 * sr as usize)
+            .map(|i| (2.0 * PI * freq * i as f32 / sr).cos())
+            .collect();
+        bank.process_samples(&signal);
         assert!(
             (bank.power(0) - 0.25).abs() < 0.01,
             "power should be ~0.25, got {}",
@@ -191,10 +198,10 @@ mod tests {
             })
             .collect();
         let mut bank = ResonatorBank::new(&configs, sr);
-        for i in 0..sr as usize {
-            let t = i as f32 / sr;
-            bank.process_sample((2.0 * PI * 440.0 * t).cos());
-        }
+        let signal: Vec<f32> = (0..sr as usize)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / sr).cos())
+            .collect();
+        bank.process_samples(&signal);
         let p = bank.powers();
         assert!(p[1] > p[0] * 10.0, "440 should dominate 220: {p:?}");
         assert!(p[1] > p[2] * 10.0, "440 should dominate 880: {p:?}");
@@ -204,9 +211,7 @@ mod tests {
     fn reset_clears_state() {
         let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
         let mut bank = ResonatorBank::new(&configs, 44100.0);
-        for _ in 0..1000 {
-            bank.process_sample(0.5);
-        }
+        bank.process_samples(&vec![0.5; 1000]);
         assert!(bank.magnitude(0) > 0.0);
         bank.reset();
         assert_eq!(bank.complex(0), (0.0, 0.0));

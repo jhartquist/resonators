@@ -61,9 +61,8 @@ fn bank_matches_reference() {
     let mut bank = ResonatorBank::new(&fx.configs, SAMPLE_RATE);
 
     for frame in 0..fx.n_frames {
-        for i in 0..HOP_SIZE {
-            bank.process_sample(fx.signal[frame * HOP_SIZE + i]);
-        }
+        let start = frame * HOP_SIZE;
+        bank.process_samples(&fx.signal[start..start + HOP_SIZE]);
 
         for bin in 0..fx.n_bins {
             let (re, im) = bank.complex(bin);
@@ -88,9 +87,8 @@ fn resonator_matches_reference() {
     for bin in 0..fx.n_bins {
         let mut r = Resonator::new(fx.configs[bin], SAMPLE_RATE);
         for frame in 0..fx.n_frames {
-            for i in 0..HOP_SIZE {
-                r.process_sample(fx.signal[frame * HOP_SIZE + i]);
-            }
+            let start = frame * HOP_SIZE;
+            r.process_samples(&fx.signal[start..start + HOP_SIZE]);
             let (re, im) = r.complex();
             assert!(
                 (re - fx.ref_re[frame][bin]).abs() < TOLERANCE,
