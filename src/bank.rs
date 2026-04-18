@@ -65,6 +65,7 @@ impl ResonatorBank {
         }
     }
 
+    #[inline]
     pub fn process_sample(&mut self, sample: f32) {
         for k in 0..self.n_resonators {
             let alpha = self.alphas[k];
