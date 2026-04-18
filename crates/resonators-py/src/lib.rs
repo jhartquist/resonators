@@ -1,7 +1,7 @@
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
-use pyo3::prelude::*;
 use ::resonators as core;
 use core::ResonatorConfig;
+use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use pyo3::prelude::*;
 
 #[pyclass(name = "ResonatorBank")]
 struct PyResonatorBank {
@@ -11,26 +11,37 @@ struct PyResonatorBank {
 #[pymethods]
 impl PyResonatorBank {
     #[new]
+    #[pyo3(signature = (freqs, sample_rate, *, alphas=None, betas=None))]
     fn new(
         freqs: PyReadonlyArray1<'_, f32>,
-        alphas: PyReadonlyArray1<'_, f32>,
-        betas: PyReadonlyArray1<'_, f32>,
         sample_rate: f32,
+        alphas: Option<PyReadonlyArray1<'_, f32>>,
+        betas: Option<PyReadonlyArray1<'_, f32>>,
     ) -> PyResult<Self> {
-        let freqs = freqs.as_slice()?;
-        let alphas = alphas.as_slice()?;
-        let betas = betas.as_slice()?;
-        if freqs.len() != alphas.len() || freqs.len() != betas.len() {
+        let freqs_slice = freqs.as_slice()?;
+
+        let alphas_vec: Vec<f32> = match alphas {
+            Some(arr) => arr.as_slice()?.to_vec(),
+            None => core::heuristic_alphas(freqs_slice, sample_rate),
+        };
+        let betas_vec: Vec<f32> = match betas {
+            Some(arr) => arr.as_slice()?.to_vec(),
+            None => alphas_vec.clone(),
+        };
+
+        if freqs_slice.len() != alphas_vec.len() || freqs_slice.len() != betas_vec.len() {
             return Err(pyo3::exceptions::PyValueError::new_err(
                 "freqs, alphas, and betas must have the same length",
             ));
         }
-        let configs: Vec<ResonatorConfig> = freqs
+
+        let configs: Vec<ResonatorConfig> = freqs_slice
             .iter()
-            .zip(alphas)
-            .zip(betas)
+            .zip(&alphas_vec)
+            .zip(&betas_vec)
             .map(|((&f, &a), &b)| ResonatorConfig::new(f, a, b))
             .collect();
+
         Ok(Self {
             inner: core::ResonatorBank::new(&configs, sample_rate),
         })
@@ -92,8 +103,18 @@ impl PyResonatorBank {
 }
 
 #[pyfunction]
-fn alpha_heuristic(freq: f32, sample_rate: f32) -> f32 {
-    core::alpha_heuristic(freq, sample_rate)
+fn heuristic_alpha(freq: f32, sample_rate: f32) -> f32 {
+    core::heuristic_alpha(freq, sample_rate)
+}
+
+#[pyfunction]
+fn heuristic_alphas<'py>(
+    py: Python<'py>,
+    freqs: PyReadonlyArray1<'_, f32>,
+    sample_rate: f32,
+) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    let slice = freqs.as_slice()?;
+    Ok(core::heuristic_alphas(slice, sample_rate).into_pyarray(py))
 }
 
 #[pyfunction]
@@ -114,7 +135,8 @@ fn midi_to_hz(midi: f32, tuning: f32) -> f32 {
 #[pymodule]
 fn resonators(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyResonatorBank>()?;
-    m.add_function(wrap_pyfunction!(alpha_heuristic, m)?)?;
+    m.add_function(wrap_pyfunction!(heuristic_alpha, m)?)?;
+    m.add_function(wrap_pyfunction!(heuristic_alphas, m)?)?;
     m.add_function(wrap_pyfunction!(alpha_from_tau, m)?)?;
     m.add_function(wrap_pyfunction!(tau_from_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(midi_to_hz, m)?)?;

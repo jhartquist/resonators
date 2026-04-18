@@ -117,7 +117,7 @@ impl Resonator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alpha_heuristic;
+    use crate::heuristic_alpha;
 
     #[test]
     fn power_is_magnitude_squared() {
@@ -155,7 +155,7 @@ mod tests {
     fn matched_sine_power_converges_near_one_quarter() {
         let sr = 44100.0;
         let freq = 440.0;
-        let alpha = alpha_heuristic(freq, sr);
+        let alpha = heuristic_alpha(freq, sr);
         let mut r = Resonator::new(ResonatorConfig::new(freq, alpha, alpha), sr);
         let signal: Vec<f32> = (0..2 * sr as usize)
             .map(|i| (2.0 * PI * freq * i as f32 / sr).cos())

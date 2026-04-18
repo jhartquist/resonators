@@ -166,13 +166,13 @@ impl ResonatorBank {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alpha_heuristic;
+    use crate::heuristic_alpha;
 
     #[test]
     fn matched_sine_power_converges_near_one_quarter() {
         let sr = 44100.0;
         let freq = 440.0;
-        let alpha = alpha_heuristic(freq, sr);
+        let alpha = heuristic_alpha(freq, sr);
         let configs = vec![ResonatorConfig::new(freq, alpha, alpha)];
         let mut bank = ResonatorBank::new(&configs, sr);
         let signal: Vec<f32> = (0..2 * sr as usize)
@@ -193,7 +193,7 @@ mod tests {
         let configs: Vec<_> = freqs
             .iter()
             .map(|&f| {
-                let a = alpha_heuristic(f, sr);
+                let a = heuristic_alpha(f, sr);
                 ResonatorConfig::new(f, a, a)
             })
             .collect();

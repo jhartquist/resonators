@@ -1,11 +1,11 @@
 import numpy as np
-import pytest
 from pathlib import Path
 
 from resonators import (
     ResonatorBank,
     alpha_from_tau,
-    alpha_heuristic,
+    heuristic_alpha,
+    heuristic_alphas,
     midi_to_hz,
     tau_from_alpha,
 )
@@ -26,24 +26,30 @@ def test_alpha_tau_roundtrip():
     assert abs(tau_from_alpha(alpha, SAMPLE_RATE) - tau) < 1e-6
 
 
-def test_alpha_heuristic_in_range():
+def test_heuristic_alpha_in_range():
     for f in [27.5, 440.0, 4186.0]:
-        a = alpha_heuristic(f, SAMPLE_RATE)
+        a = heuristic_alpha(f, SAMPLE_RATE)
         assert 0.0 < a < 1.0
 
 
-def test_bank_basic_construction():
+def test_heuristic_alphas_matches_scalar():
+    freqs = np.array([27.5, 440.0, 4186.0], dtype=np.float32)
+    alphas = heuristic_alphas(freqs, SAMPLE_RATE)
+    for i, f in enumerate(freqs):
+        assert alphas[i] == heuristic_alpha(float(f), SAMPLE_RATE)
+
+
+def test_bank_default_alphas():
+    # no alphas provided — uses heuristic_alphas internally
     freqs = np.array([220.0, 440.0, 880.0], dtype=np.float32)
-    alphas = np.array([alpha_heuristic(f, SAMPLE_RATE) for f in freqs], dtype=np.float32)
-    bank = ResonatorBank(freqs, alphas, alphas, SAMPLE_RATE)
+    bank = ResonatorBank(freqs, SAMPLE_RATE)
     assert len(bank) == 3
     np.testing.assert_allclose(bank.frequencies(), freqs)
 
 
 def test_bank_peaks_at_matched_bin():
     freqs = np.array([220.0, 440.0, 880.0], dtype=np.float32)
-    alphas = np.array([alpha_heuristic(f, SAMPLE_RATE) for f in freqs], dtype=np.float32)
-    bank = ResonatorBank(freqs, alphas, alphas, SAMPLE_RATE)
+    bank = ResonatorBank(freqs, SAMPLE_RATE)
 
     n = int(SAMPLE_RATE)
     t = np.arange(n, dtype=np.float32) / SAMPLE_RATE
@@ -62,7 +68,7 @@ def test_bank_matches_fixture():
     signal = data["signal"].astype(np.float32)
     ref = data["ref"]  # shape (n_frames, 2, n_bins)
 
-    bank = ResonatorBank(freqs, alphas, alphas, SAMPLE_RATE)
+    bank = ResonatorBank(freqs, SAMPLE_RATE, alphas=alphas)
     n_frames = ref.shape[0]
 
     for frame in range(n_frames):
@@ -76,10 +82,17 @@ def test_bank_matches_fixture():
             assert abs(im - ref[frame, 1, bin_idx]) < TOLERANCE
 
 
-def test_reset_clears_state():
+def test_bank_explicit_alphas_betas():
     freqs = np.array([440.0], dtype=np.float32)
     alphas = np.array([0.01], dtype=np.float32)
-    bank = ResonatorBank(freqs, alphas, alphas, SAMPLE_RATE)
+    betas = np.array([0.02], dtype=np.float32)
+    bank = ResonatorBank(freqs, SAMPLE_RATE, alphas=alphas, betas=betas)
+    assert len(bank) == 1
+
+
+def test_reset_clears_state():
+    freqs = np.array([440.0], dtype=np.float32)
+    bank = ResonatorBank(freqs, SAMPLE_RATE, alphas=np.array([0.01], dtype=np.float32))
     bank.process_samples(np.full(1000, 0.5, dtype=np.float32))
     assert bank.magnitude(0) > 0.0
     bank.reset()

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use resonators::{ResonatorBank, ResonatorConfig, alpha_heuristic, midi_to_hz};
+use resonators::{ResonatorBank, ResonatorConfig, heuristic_alpha, midi_to_hz};
 
 const SAMPLE_RATE: f32 = 44100.0;
 const TUNING: f32 = 440.0;
@@ -15,7 +15,7 @@ fn log_spaced_configs(n_bins: usize) -> Vec<ResonatorConfig> {
     (0..n_bins)
         .map(|i| {
             let freq = f_low * (ratio * i as f32 / (n_bins - 1) as f32).exp();
-            let alpha = alpha_heuristic(freq, SAMPLE_RATE);
+            let alpha = heuristic_alpha(freq, SAMPLE_RATE);
             ResonatorConfig::new(freq, alpha, alpha)
         })
         .collect()

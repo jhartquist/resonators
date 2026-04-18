@@ -1,6 +1,13 @@
-pub fn alpha_heuristic(freq: f32, sample_rate: f32) -> f32 {
+pub fn heuristic_alpha(freq: f32, sample_rate: f32) -> f32 {
     let dt = 1.0 / sample_rate;
     1.0 - (-dt * freq / (1.0 + freq).log10()).exp()
+}
+
+pub fn heuristic_alphas(freqs: &[f32], sample_rate: f32) -> Vec<f32> {
+    freqs
+        .iter()
+        .map(|&f| heuristic_alpha(f, sample_rate))
+        .collect()
 }
 
 pub fn alpha_from_tau(tau: f32, sample_rate: f32) -> f32 {
@@ -18,17 +25,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn alpha_heuristic_in_valid_range() {
+    fn heuristic_alpha_in_valid_range() {
         for &freq in &[27.5, 440.0, 4186.0] {
-            let a = alpha_heuristic(freq, 44100.0);
+            let a = heuristic_alpha(freq, 44100.0);
             assert!(a > 0.0 && a < 1.0, "alpha({freq}) = {a}");
         }
     }
 
     #[test]
-    fn alpha_heuristic_increases_with_freq() {
+    fn heuristic_alpha_increases_with_freq() {
         let sr = 44100.0;
-        assert!(alpha_heuristic(4000.0, sr) > alpha_heuristic(100.0, sr));
+        assert!(heuristic_alpha(4000.0, sr) > heuristic_alpha(100.0, sr));
+    }
+
+    #[test]
+    fn heuristic_alphas_matches_scalar() {
+        let sr = 44100.0;
+        let freqs = vec![27.5, 440.0, 4186.0];
+        let alphas = heuristic_alphas(&freqs, sr);
+        for (i, &f) in freqs.iter().enumerate() {
+            assert_eq!(alphas[i], heuristic_alpha(f, sr));
+        }
     }
 
     #[test]

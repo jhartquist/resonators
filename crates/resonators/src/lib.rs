@@ -8,6 +8,6 @@ mod resonator;
 
 pub use bank::ResonatorBank;
 pub use config::ResonatorConfig;
-pub use dynamics::{alpha_from_tau, alpha_heuristic, tau_from_alpha};
+pub use dynamics::{alpha_from_tau, heuristic_alpha, heuristic_alphas, tau_from_alpha};
 pub use frequencies::midi_to_hz;
 pub use resonator::Resonator;
