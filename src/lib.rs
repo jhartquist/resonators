@@ -78,10 +78,14 @@ impl Resonator {
         // occasional phasor stabilization
         self.sample_count += 1;
         if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
-            let mag = (self.z_re * self.z_re + self.z_im * self.z_im).sqrt();
-            self.z_re /= mag;
-            self.z_im /= mag;
+            self.stabilize();
         }
+    }
+
+    fn stabilize(&mut self) {
+        let mag = (self.z_re * self.z_re + self.z_im * self.z_im).sqrt();
+        self.z_re /= mag;
+        self.z_im /= mag;
     }
 
     pub fn freq(&self) -> f32 {
@@ -202,4 +206,13 @@ mod tests {
         assert!((r.phase() - PI).abs() < 1e-6);
     }
 
+    #[test]
+    fn stabilize_restores_unit_magnitude() {
+        let mut r = Resonator::new(ResonatorConfig::new(440.0, 1.0, 1.0), 44100.0);
+        r.z_re = 3.0;
+        r.z_im = 4.0;
+        r.stabilize();
+        assert!((r.z_re - 0.6).abs() < 1e-6);
+        assert!((r.z_im - 0.8).abs() < 1e-6);
+    }
 }
