@@ -95,9 +95,9 @@ impl ResonatorBank {
 
     fn stabilize(&mut self) {
         for k in 0..self.n_resonators {
-            let mag = (self.z_re[k] * self.z_re[k] + self.z_im[k] * self.z_im[k]).sqrt();
-            self.z_re[k] /= mag;
-            self.z_im[k] /= mag;
+            let inv_mag = 1.0 / (self.z_re[k] * self.z_re[k] + self.z_im[k] * self.z_im[k]).sqrt();
+            self.z_re[k] *= inv_mag;
+            self.z_im[k] *= inv_mag;
         }
     }
 
