@@ -69,10 +69,11 @@ impl ResonatorBank {
         for k in 0..self.n_resonators {
             let alpha = self.alphas[k];
             let beta = self.betas[k];
+            let alpha_sample = alpha * sample;
 
             // EWMA accumulation
-            self.r_re[k] = (1.0 - alpha) * self.r_re[k] + alpha * sample * self.z_re[k];
-            self.r_im[k] = (1.0 - alpha) * self.r_im[k] + alpha * sample * self.z_im[k];
+            self.r_re[k] = (1.0 - alpha) * self.r_re[k] + alpha_sample * self.z_re[k];
+            self.r_im[k] = (1.0 - alpha) * self.r_im[k] + alpha_sample * self.z_im[k];
 
             // output smoothing
             self.rr_re[k] = (1.0 - beta) * self.rr_re[k] + beta * self.r_re[k];
