@@ -76,6 +76,16 @@ impl Resonator {
         self.z_im /= mag;
     }
 
+    pub fn reset(&mut self) {
+        self.z_re = 1.0;
+        self.z_im = 0.0;
+        self.r_re = 0.0;
+        self.r_im = 0.0;
+        self.rr_re = 0.0;
+        self.rr_im = 0.0;
+        self.sample_count = 0;
+    }
+
     pub fn freq(&self) -> f32 {
         self.freq
     }
@@ -131,6 +141,17 @@ mod tests {
         r.rr_re = -1.0;
         r.rr_im = 0.0;
         assert!((r.phase() - PI).abs() < 1e-6);
+    }
+
+    #[test]
+    fn reset_clears_state() {
+        let mut r = Resonator::new(ResonatorConfig::new(440.0, 0.01, 0.01), 44100.0);
+        for _ in 0..1000 {
+            r.process_sample(0.5);
+        }
+        assert!(r.magnitude() > 0.0);
+        r.reset();
+        assert_eq!(r.complex(), (0.0, 0.0));
     }
 
     #[test]

@@ -101,6 +101,16 @@ impl ResonatorBank {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.z_re.fill(1.0);
+        self.z_im.fill(0.0);
+        self.r_re.fill(0.0);
+        self.r_im.fill(0.0);
+        self.rr_re.fill(0.0);
+        self.rr_im.fill(0.0);
+        self.sample_count = 0;
+    }
+
     pub fn len(&self) -> usize {
         self.n_resonators
     }
@@ -143,5 +153,22 @@ impl ResonatorBank {
 
     pub fn powers(&self) -> Vec<f32> {
         (0..self.n_resonators).map(|i| self.power(i)).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reset_clears_state() {
+        let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
+        let mut bank = ResonatorBank::new(&configs, 44100.0);
+        for _ in 0..1000 {
+            bank.process_sample(0.5);
+        }
+        assert!(bank.magnitude(0) > 0.0);
+        bank.reset();
+        assert_eq!(bank.complex(0), (0.0, 0.0));
     }
 }
