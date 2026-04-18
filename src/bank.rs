@@ -72,12 +72,12 @@ impl ResonatorBank {
             let alpha_sample = alpha * sample;
 
             // EWMA accumulation
-            self.r_re[k] = (1.0 - alpha) * self.r_re[k] + alpha_sample * self.z_re[k];
-            self.r_im[k] = (1.0 - alpha) * self.r_im[k] + alpha_sample * self.z_im[k];
+            self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
+            self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
 
             // output smoothing
-            self.rr_re[k] = (1.0 - beta) * self.rr_re[k] + beta * self.r_re[k];
-            self.rr_im[k] = (1.0 - beta) * self.rr_im[k] + beta * self.r_im[k];
+            self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
+            self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
 
             // rotate phasor
             let zr = self.z_re[k];
