@@ -65,7 +65,8 @@ fn bank_matches_reference() {
         bank.process_samples(&fx.signal[start..start + HOP_SIZE]);
 
         for bin in 0..fx.n_bins {
-            let (re, im) = bank.complex(bin);
+            let c = bank.complex(bin);
+            let (re, im) = (c.re, c.im);
             assert!(
                 (re - fx.ref_re[frame][bin]).abs() < TOLERANCE,
                 "frame {frame} bin {bin} re: {re} vs {}",
@@ -89,7 +90,8 @@ fn resonator_matches_reference() {
         for frame in 0..fx.n_frames {
             let start = frame * HOP_SIZE;
             r.process_samples(&fx.signal[start..start + HOP_SIZE]);
-            let (re, im) = r.complex();
+            let c = r.complex();
+            let (re, im) = (c.re, c.im);
             assert!(
                 (re - fx.ref_re[frame][bin]).abs() < TOLERANCE,
                 "frame {frame} bin {bin} re: {re} vs {}",

@@ -1,5 +1,7 @@
 use std::f32::consts::PI;
 
+use num_complex::Complex32;
+
 use crate::STABILIZE_EVERY;
 use crate::config::ResonatorConfig;
 
@@ -100,6 +102,18 @@ impl ResonatorBank {
         }
     }
 
+    pub fn resonate(&mut self, signal: &[f32], hop: usize) -> Vec<Complex32> {
+        let n_frames = signal.len() / hop;
+        let mut out = Vec::with_capacity(n_frames * self.n_resonators);
+        for frame in 0..n_frames {
+            self.process_samples(&signal[frame * hop..(frame + 1) * hop]);
+            for (&r, &i) in self.rr_re.iter().zip(&self.rr_im) {
+                out.push(Complex32::new(r, i));
+            }
+        }
+        out
+    }
+
     fn stabilize(&mut self) {
         for k in 0..self.n_resonators {
             let inv_mag = 1.0 / (self.z_re[k] * self.z_re[k] + self.z_im[k] * self.z_im[k]).sqrt();
@@ -142,8 +156,8 @@ impl ResonatorBank {
         self.rr_im[i].atan2(self.rr_re[i])
     }
 
-    pub fn complex(&self, i: usize) -> (f32, f32) {
-        (self.rr_re[i], self.rr_im[i])
+    pub fn complex(&self, i: usize) -> Complex32 {
+        Complex32::new(self.rr_re[i], self.rr_im[i])
     }
 
     pub fn frequencies(&self) -> Vec<f32> {
@@ -208,12 +222,41 @@ mod tests {
     }
 
     #[test]
+    fn resonate_matches_streaming() {
+        let sr = 44100.0;
+        let hop = 256;
+        let configs = vec![
+            ResonatorConfig::new(440.0, 0.01, 0.01),
+            ResonatorConfig::new(880.0, 0.01, 0.01),
+        ];
+        let signal: Vec<f32> = (0..sr as usize)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / sr).cos())
+            .collect();
+
+        // batch
+        let mut bank = ResonatorBank::new(&configs, sr);
+        let batch = bank.resonate(&signal, hop);
+
+        // streaming equivalent
+        let mut bank2 = ResonatorBank::new(&configs, sr);
+        let n_frames = signal.len() / hop;
+        let mut streamed = Vec::with_capacity(batch.len());
+        for frame in 0..n_frames {
+            bank2.process_samples(&signal[frame * hop..(frame + 1) * hop]);
+            for (&r, &i) in bank2.rr_re.iter().zip(&bank2.rr_im) {
+                streamed.push(Complex32::new(r, i));
+            }
+        }
+        assert_eq!(batch, streamed);
+    }
+
+    #[test]
     fn reset_clears_state() {
         let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
         let mut bank = ResonatorBank::new(&configs, 44100.0);
         bank.process_samples(&vec![0.5; 1000]);
         assert!(bank.magnitude(0) > 0.0);
         bank.reset();
-        assert_eq!(bank.complex(0), (0.0, 0.0));
+        assert_eq!(bank.complex(0), Complex32::new(0.0, 0.0));
     }
 }

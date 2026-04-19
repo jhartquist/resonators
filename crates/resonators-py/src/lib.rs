@@ -1,6 +1,6 @@
 use ::resonators as core;
 use core::ResonatorConfig;
-use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
+use numpy::{Complex32, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1};
 use pyo3::prelude::*;
 
 #[pyclass(name = "ResonatorBank")]
@@ -51,10 +51,27 @@ impl PyResonatorBank {
         self.inner.process_sample(sample);
     }
 
-    fn process_samples(&mut self, py: Python<'_>, samples: PyReadonlyArray1<'_, f32>) -> PyResult<()> {
+    fn process_samples(
+        &mut self,
+        py: Python<'_>,
+        samples: PyReadonlyArray1<'_, f32>,
+    ) -> PyResult<()> {
         let slice = samples.as_slice()?;
         py.detach(|| self.inner.process_samples(slice));
         Ok(())
+    }
+
+    fn resonate<'py>(
+        &mut self,
+        py: Python<'py>,
+        signal: PyReadonlyArray1<'_, f32>,
+        hop: usize,
+    ) -> PyResult<Bound<'py, PyArray2<Complex32>>> {
+        let slice = signal.as_slice()?;
+        let n_bins = self.inner.len();
+        let frames = py.detach(|| self.inner.resonate(slice, hop));
+        let n_frames = frames.len() / n_bins;
+        Ok(frames.into_pyarray(py).reshape([n_frames, n_bins])?)
     }
 
     fn reset(&mut self) {
@@ -81,7 +98,7 @@ impl PyResonatorBank {
         self.inner.power(i)
     }
 
-    fn complex(&self, i: usize) -> (f32, f32) {
+    fn complex(&self, i: usize) -> Complex32 {
         self.inner.complex(i)
     }
 

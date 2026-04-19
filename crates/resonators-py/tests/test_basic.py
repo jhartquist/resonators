@@ -75,11 +75,11 @@ def test_bank_matches_fixture():
         start = frame * HOP_SIZE
         bank.process_samples(signal[start:start + HOP_SIZE])
         for bin_idx in range(len(bank)):
-            re, im = bank.complex(bin_idx)
-            assert abs(re - ref[frame, 0, bin_idx]) < TOLERANCE, (
-                f"frame {frame} bin {bin_idx} re: {re} vs {ref[frame, 0, bin_idx]}"
+            c = bank.complex(bin_idx)
+            assert abs(c.real - ref[frame, 0, bin_idx]) < TOLERANCE, (
+                f"frame {frame} bin {bin_idx} re: {c.real} vs {ref[frame, 0, bin_idx]}"
             )
-            assert abs(im - ref[frame, 1, bin_idx]) < TOLERANCE
+            assert abs(c.imag - ref[frame, 1, bin_idx]) < TOLERANCE
 
 
 def test_bank_explicit_alphas_betas():
@@ -96,4 +96,4 @@ def test_reset_clears_state():
     bank.process_samples(np.full(1000, 0.5, dtype=np.float32))
     assert bank.magnitude(0) > 0.0
     bank.reset()
-    assert bank.complex(0) == (0.0, 0.0)
+    assert bank.complex(0) == 0.0 + 0.0j

@@ -1,5 +1,7 @@
 use std::f32::consts::PI;
 
+use num_complex::Complex32;
+
 use crate::STABILIZE_EVERY;
 use crate::config::ResonatorConfig;
 
@@ -109,8 +111,8 @@ impl Resonator {
         self.rr_im.atan2(self.rr_re)
     }
 
-    pub fn complex(&self) -> (f32, f32) {
-        (self.rr_re, self.rr_im)
+    pub fn complex(&self) -> Complex32 {
+        Complex32::new(self.rr_re, self.rr_im)
     }
 }
 
@@ -174,7 +176,7 @@ mod tests {
         r.process_samples(&vec![0.5; 1000]);
         assert!(r.magnitude() > 0.0);
         r.reset();
-        assert_eq!(r.complex(), (0.0, 0.0));
+        assert_eq!(r.complex(), Complex32::new(0.0, 0.0));
     }
 
     #[test]
