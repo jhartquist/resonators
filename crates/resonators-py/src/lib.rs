@@ -3,13 +3,13 @@ use core::ResonatorConfig;
 use numpy::{Complex32, IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray1};
 use pyo3::prelude::*;
 
-#[pyclass(name = "ResonatorBank")]
-struct PyResonatorBank {
+#[pyclass]
+struct ResonatorBank {
     inner: core::ResonatorBank,
 }
 
 #[pymethods]
-impl PyResonatorBank {
+impl ResonatorBank {
     #[new]
     #[pyo3(signature = (freqs, sample_rate, *, alphas=None, betas=None))]
     fn new(
@@ -151,7 +151,7 @@ fn midi_to_hz(midi: f32, tuning: f32) -> f32 {
 
 #[pymodule]
 fn resonators(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyResonatorBank>()?;
+    m.add_class::<ResonatorBank>()?;
     m.add_function(wrap_pyfunction!(heuristic_alpha, m)?)?;
     m.add_function(wrap_pyfunction!(heuristic_alphas, m)?)?;
     m.add_function(wrap_pyfunction!(alpha_from_tau, m)?)?;
