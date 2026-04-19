@@ -22,5 +22,10 @@ py-build: py-setup
 py-test: py-build
     cd crates/resonators-py && uv run pytest
 
+# WASM bindings (requires wasm-pack)
+wasm-build:
+    cd crates/resonators-wasm && wasm-pack build --target web --release --out-name resonators
+    sed -i '' 's/"resonators-wasm"/"resonators"/' crates/resonators-wasm/pkg/package.json
+
 # Everything
 ci: test py-test
