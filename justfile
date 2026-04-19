@@ -8,6 +8,10 @@ test:
 bench:
     cargo bench --bench bank
 
+# Python vs noFFT throughput comparison
+bench-vs-nofft:
+    uv run scripts/benchmark.py
+
 # Python bindings (requires uv + Rust toolchain)
 py-setup:
     cd crates/resonators-py && uv venv --allow-existing && uv pip install maturin pytest numpy
