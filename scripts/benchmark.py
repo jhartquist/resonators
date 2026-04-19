@@ -3,7 +3,7 @@
 # dependencies = ["numpy", "noFFT", "resonators"]
 #
 # [tool.uv.sources]
-# resonators = { path = "../crates/resonators-py", editable = true }
+# resonators = { path = "../crates/resonators-py" }
 # ///
 """Throughput comparison: resonators (Rust via PyO3) vs noFFT (C++).
 
