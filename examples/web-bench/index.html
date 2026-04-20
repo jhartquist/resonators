@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>resonators wasm benchmark</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2em auto; padding: 0 1em; color: #222; }
+    h1 { margin-bottom: 0.2em; }
+    code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
+    table { border-collapse: collapse; margin: 1em 0; }
+    th, td { padding: 6px 14px; border-bottom: 1px solid #ddd; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    th { background: #f8f8f8; }
+    button { padding: 8px 16px; font-size: 15px; cursor: pointer; }
+    .meta { color: #666; font-size: 14px; line-height: 1.5; }
+    .ok { color: #1a7f37; font-weight: 600; }
+    .bad { color: #cf222e; font-weight: 600; }
+    .running { color: #888; font-style: italic; }
+  </style>
+</head>
+<body>
+  <h1>resonators wasm benchmark</h1>
+  <p class="meta">
+    Browser: <span id="ua"></span><br>
+    Browser supports WASM SIMD: <span id="simd"></span> (capability check; does not reflect whether the loaded wasm uses SIMD instructions)
+  </p>
+
+  <p>
+    Each row: construct a <code>ResonatorBank</code> with N log-spaced bins (30 Hz – 8 kHz),
+    process 1 s of pseudo-noise (44100 samples), repeat 20 iterations, report mean.
+  </p>
+
+  <button id="run">Run benchmark</button>
+  <span id="status"></span>
+
+  <table id="results" hidden>
+    <thead>
+      <tr>
+        <th>bins</th>
+        <th>ns / sample</th>
+        <th>μs / 128-sample quantum</th>
+        <th>% of audio budget @ 44.1 kHz</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <p class="meta">
+    Audio budget per quantum at 44.1 kHz: <code>128 / 44100 ≈ 2902 μs</code>.
+    A single AudioWorklet must complete its <code>process()</code> call within this time.
+  </p>
+
+  <script type="module">
+    import init, { ResonatorBank } from './pkg/resonators.js';
+
+    const SAMPLE_RATE = 44100;
+    const N_SAMPLES = SAMPLE_RATE;
+    const WARMUP_ITERATIONS = 5;
+    const ITERATIONS = 20;
+    const BIN_COUNTS = [88, 264, 440, 880];
+    const QUANTUM = 128;
+    const QUANTUM_BUDGET_US = (QUANTUM / SAMPLE_RATE) * 1e6;
+
+    document.getElementById('ua').textContent = navigator.userAgent;
+
+    // Feature-detect WASM SIMD: validate a 1-instruction module containing v128.const.
+    const simdBytes = new Uint8Array([
+      0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,
+      10,10,1,8,0,65,0,253,15,253,98,11
+    ]);
+    const simdOk = WebAssembly.validate(simdBytes);
+    const simdEl = document.getElementById('simd');
+    simdEl.textContent = simdOk ? 'yes' : 'no';
+    simdEl.className = simdOk ? 'ok' : 'bad';
+
+    function logSpacedFreqs(n) {
+      const freqs = new Float32Array(n);
+      const lo = Math.log(30);
+      const hi = Math.log(8000);
+      const denom = Math.max(1, n - 1);
+      for (let i = 0; i < n; i++) {
+        freqs[i] = Math.exp(lo + (hi - lo) * i / denom);
+      }
+      return freqs;
+    }
+
+    function makeNoise(n) {
+      const sig = new Float32Array(n);
+      let x = 0xDEADBEEF | 0;
+      for (let i = 0; i < n; i++) {
+        x = (Math.imul(x, 1664525) + 1013904223) | 0;
+        sig[i] = x / 2147483648;
+      }
+      return sig;
+    }
+
+    async function bench() {
+      const status = document.getElementById('status');
+      const tbody = document.querySelector('#results tbody');
+      const table = document.getElementById('results');
+      tbody.innerHTML = '';
+      table.hidden = false;
+      status.textContent = ' running…';
+      status.className = 'running';
+
+      // yield so the "running" text paints
+      await new Promise(r => setTimeout(r, 0));
+
+      const signal = makeNoise(N_SAMPLES);
+
+      for (const nBins of BIN_COUNTS) {
+        const freqs = logSpacedFreqs(nBins);
+        const bank = new ResonatorBank(freqs, SAMPLE_RATE);
+        for (let i = 0; i < WARMUP_ITERATIONS; i++) {
+          bank.process_samples(signal);
+        }
+
+        const t0 = performance.now();
+        for (let i = 0; i < ITERATIONS; i++) {
+          bank.process_samples(signal);
+        }
+        const elapsed = performance.now() - t0;
+
+        const nsPerSample = elapsed * 1e6 / ITERATIONS / N_SAMPLES;
+        const usPerQuantum = nsPerSample * QUANTUM / 1000;
+        const pct = (usPerQuantum / QUANTUM_BUDGET_US) * 100;
+
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${nBins}</td>
+          <td>${nsPerSample.toFixed(0)}</td>
+          <td>${usPerQuantum.toFixed(1)}</td>
+          <td>${pct.toFixed(2)}%</td>
+        `;
+        tbody.appendChild(row);
+
+        bank.free();
+      }
+
+      status.textContent = ' done.';
+      status.className = '';
+    }
+
+    await init();
+    document.getElementById('run').addEventListener('click', bench);
+  </script>
+</body>
+</html>
