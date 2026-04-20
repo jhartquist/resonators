@@ -2,11 +2,6 @@ use ::resonators as core;
 use core::ResonatorConfig;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(start)]
-fn start() {
-    console_error_panic_hook::set_once();
-}
-
 #[wasm_bindgen]
 pub struct ResonatorBank {
     inner: core::ResonatorBank,
