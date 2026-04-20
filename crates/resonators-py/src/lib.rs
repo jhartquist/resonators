@@ -71,7 +71,7 @@ impl ResonatorBank {
         let n_bins = self.inner.len();
         let frames = py.detach(|| self.inner.resonate(slice, hop));
         let n_frames = frames.len() / n_bins;
-        Ok(frames.into_pyarray(py).reshape([n_frames, n_bins])?)
+        frames.into_pyarray(py).reshape([n_frames, n_bins])
     }
 
     fn reset(&mut self) {

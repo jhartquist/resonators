@@ -34,8 +34,13 @@ signal = (
     )
 ).astype(np.float32)
 
-# Reference output — resonate returns flat (num_frames * 2 * num_resonators,)
+# Reference output — noFFT.resonate returns a flat float array of
+# (num_frames * 2 * num_resonators,), interleaved as [re, im] pairs per frame.
 raw = noFFT.resonate(signal, SR, freqs, alphas, alphas, HOP)
+assert raw.size % (2 * len(freqs)) == 0, (
+    f"noFFT output size {raw.size} is not a multiple of 2 * {len(freqs)}; "
+    "the output layout may have changed."
+)
 ref = raw.reshape(-1, 2, len(freqs))
 
 OUT.mkdir(parents=True, exist_ok=True)

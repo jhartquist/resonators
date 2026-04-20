@@ -31,6 +31,7 @@ pub struct ResonatorBank {
     sample_count: u64,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl ResonatorBank {
     pub fn new(configs: &[ResonatorConfig], sample_rate: f32) -> Self {
         let n_resonators = configs.len();
@@ -134,10 +135,6 @@ impl ResonatorBank {
 
     pub fn len(&self) -> usize {
         self.n_resonators
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.n_resonators == 0
     }
 
     pub fn freq(&self, i: usize) -> f32 {
