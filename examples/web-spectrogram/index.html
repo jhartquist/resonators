@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>resonators spectrogram</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: #0a0a0a;
+    color: #e0e0e0;
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  #controls {
+    padding: 10px 16px;
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    background: #181818;
+    border-bottom: 1px solid #2a2a2a;
+    font-size: 13px;
+    flex-wrap: wrap;
+  }
+  #controls label { display: flex; align-items: center; gap: 6px; }
+  #controls button {
+    background: #2a6bd1;
+    color: white;
+    border: none;
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font: inherit;
+  }
+  #controls button:hover { background: #1f5bb8; }
+  #controls button:disabled { background: #444; cursor: not-allowed; }
+  #controls select, #controls input[type="range"] {
+    background: #2a2a2a;
+    color: #e0e0e0;
+    border: 1px solid #444;
+    padding: 4px 8px;
+    border-radius: 3px;
+    font: inherit;
+  }
+  #stage { flex: 1; position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #notes {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 44px;
+    pointer-events: none;
+    color: #aaa;
+    font-size: 11px;
+    font-family: ui-monospace, monospace;
+  }
+  #notes div {
+    position: absolute;
+    right: 6px;
+    transform: translateY(50%);
+    text-shadow: 0 0 3px #000;
+  }
+  #stats {
+    position: absolute;
+    top: 8px; right: 12px;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    color: #ccc;
+    background: rgba(0,0,0,0.55);
+    padding: 5px 10px;
+    border-radius: 3px;
+    pointer-events: none;
+  }
+  #pauseHint {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+    color: rgba(255,255,255,0.7);
+    pointer-events: none;
+    display: none;
+  }
+  #pauseHint.show { display: block; }
+  #help { padding: 10px; color: #666; font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+  <div id="controls">
+    <button id="micBtn">Start mic</button>
+    <label>View:
+      <select id="view">
+        <option value="log">Log (musical)</option>
+        <option value="lin">Linear</option>
+      </select>
+    </label>
+    <label>Colormap:
+      <select id="cmap">
+        <option>viridis</option>
+        <option selected>magma</option>
+        <option>inferno</option>
+        <option>plasma</option>
+        <option>grayscale</option>
+      </select>
+    </label>
+    <label>Floor: <input type="range" id="floor" min="-100" max="-20" value="-80" step="1"><span id="floorV">-80</span> dB</label>
+    <label>Contrast: <input type="range" id="range" min="20" max="80" value="40" step="1"><span id="rangeV">40</span> dB</label>
+    <button id="exportBtn" disabled>Export PNG</button>
+  </div>
+  <div id="stage">
+    <div id="notes"></div>
+    <canvas id="canvas"></canvas>
+    <div id="stats"></div>
+    <div id="pauseHint">⏸ paused</div>
+  </div>
+  <div id="help">spacebar to pause · mic input only · refresh to release mic</div>
+
+<script type="module">
+  // --- config ---
+  const TEX_COLS = 1024;                 // ring buffer width (columns of history)
+  const LOG_BINS_PER_SEMITONE = 3;       // 88 semitones × 3 = 264 bins
+  const LOG_LO_MIDI = 21;                // A0
+  const LOG_HI_MIDI = 108;               // C8
+  const LIN_BINS = 440;
+  const LIN_LO_HZ = 30;
+  const LIN_HI_HZ = 8000;
+  const STATS_HZ = 5;
+
+  function midiToHz(midi) { return 440.0 * Math.pow(2, (midi - 69) / 12); }
+
+  function logFreqs() {
+    const n = (LOG_HI_MIDI - LOG_LO_MIDI + 1) * LOG_BINS_PER_SEMITONE;
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      out[i] = midiToHz(LOG_LO_MIDI + i / LOG_BINS_PER_SEMITONE);
+    }
+    return out;
+  }
+  function linFreqs() {
+    const out = new Float32Array(LIN_BINS);
+    for (let i = 0; i < LIN_BINS; i++) {
+      out[i] = LIN_LO_HZ + (LIN_HI_HZ - LIN_LO_HZ) * i / (LIN_BINS - 1);
+    }
+    return out;
+  }
+  const logBinCount = (LOG_HI_MIDI - LOG_LO_MIDI + 1) * LOG_BINS_PER_SEMITONE;
+
+  // 8-stop colormaps (GPU interpolates with LINEAR filter)
+  const COLORMAPS = {
+    viridis:   [68,1,84, 64,67,135, 41,120,142, 32,144,140, 68,190,112, 121,209,81, 189,222,38, 253,231,37],
+    magma:     [0,0,4, 24,15,61, 68,15,118, 121,28,109, 187,55,84, 233,90,52, 252,158,73, 252,253,191],
+    inferno:   [0,0,4, 27,12,65, 87,15,109, 144,33,92, 199,58,47, 235,107,17, 251,180,38, 252,255,164],
+    plasma:    [13,8,135, 84,2,163, 139,10,165, 185,50,137, 219,92,104, 244,136,73, 254,188,43, 240,249,33],
+    grayscale: [0,0,0, 36,36,36, 73,73,73, 109,109,109, 146,146,146, 182,182,182, 219,219,219, 255,255,255],
+  };
+
+  // --- WebGL ---
+  const canvas = document.getElementById('canvas');
+  const gl = canvas.getContext('webgl2', {
+    antialias: false,
+    premultipliedAlpha: false,
+    preserveDrawingBuffer: true,  // needed for canvas.toBlob() PNG export
+  });
+  if (!gl) throw new Error('WebGL2 required');
+
+  const VERT = `#version 300 es
+    in vec2 aPosition;
+    out vec2 vUV;
+    void main() {
+      vUV = aPosition * 0.5 + 0.5;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }`;
+
+  const FRAG = `#version 300 es
+    precision highp float;
+    uniform sampler2D uMags;
+    uniform sampler2D uCmap;
+    uniform int uWriteHead;
+    uniform vec2 uTexSize;     // (cols, bins)
+    uniform float uDbMin;
+    uniform float uDbMax;
+    uniform vec2 uViewX;       // visible time range [0..1] of buffer
+    uniform vec2 uViewY;       // visible freq range [0..1] of bins
+    in vec2 vUV;
+    out vec4 outColor;
+    void main() {
+      // tFrac=0 = oldest visible column, tFrac=1 = newest. Newest column index = uWriteHead - 1.
+      float tFrac = mix(uViewX.x, uViewX.y, vUV.x);
+      float colIdx = mod(float(uWriteHead - 1) - (1.0 - tFrac) * uTexSize.x, uTexSize.x);
+      float bin = mix(uViewY.x, uViewY.y, vUV.y) * uTexSize.y;
+      vec2 mUV = vec2((colIdx + 0.5) / uTexSize.x, (bin + 0.5) / uTexSize.y);
+      float mag = texture(uMags, mUV).r;
+      float db = 20.0 * log(max(mag, 1e-12)) / log(10.0);
+      float t = clamp((db - uDbMin) / (uDbMax - uDbMin), 0.0, 1.0);
+      outColor = texture(uCmap, vec2(t, 0.5));
+    }`;
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      throw new Error(gl.getShaderInfoLog(s));
+    }
+    return s;
+  }
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, VERT));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAG));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+  gl.useProgram(program);
+
+  // fullscreen quad
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+  const aPosition = gl.getAttribLocation(program, 'aPosition');
+  gl.enableVertexAttribArray(aPosition);
+  gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+
+  const u = {
+    mags: gl.getUniformLocation(program, 'uMags'),
+    cmap: gl.getUniformLocation(program, 'uCmap'),
+    writeHead: gl.getUniformLocation(program, 'uWriteHead'),
+    texSize: gl.getUniformLocation(program, 'uTexSize'),
+    dbMin: gl.getUniformLocation(program, 'uDbMin'),
+    dbMax: gl.getUniformLocation(program, 'uDbMax'),
+    viewX: gl.getUniformLocation(program, 'uViewX'),
+    viewY: gl.getUniformLocation(program, 'uViewY'),
+  };
+  gl.uniform1i(u.mags, 0);
+  gl.uniform1i(u.cmap, 1);
+
+  // R32F with LINEAR filtering blends between adjacent bins/columns, smoothing
+  // sampling stripes when canvas pixels don't align to bin/column boundaries.
+  // Requires OES_texture_float_linear (universal on real GPUs).
+  const linearFloat = !!gl.getExtension('OES_texture_float_linear');
+  const magFilter = linearFloat ? gl.LINEAR : gl.NEAREST;
+
+  function makeMagTex(nBins) {
+    const tex = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, TEX_COLS, nBins, 0, gl.RED, gl.FLOAT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, magFilter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return tex;
+  }
+  const linMagTex = makeMagTex(LIN_BINS);
+  const logMagTex = makeMagTex(logBinCount);
+
+  const cmapTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, cmapTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  function setColormap(name) {
+    const data = new Uint8Array(COLORMAPS[name]);
+    const stops = data.length / 3;
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, cmapTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB8, stops, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+  }
+  setColormap('magma');
+
+  // --- ring buffer state ---
+  let linHead = 0, logHead = 0;
+  let view = 'log';
+  let floorDb = -80;
+  let rangeDb = 40;
+  let paused = false;
+  const pendingLin = [];
+  const pendingLog = [];
+  let dspUs = 0;
+  let peakDb = -Infinity;
+
+  // --- mic + worklet ---
+  let audioCtx = null, workletNode = null, micStream = null, micActive = false;
+  const micBtn = document.getElementById('micBtn');
+
+  async function startMic() {
+    if (micActive) return stopMic();
+    audioCtx = new AudioContext();
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+    const wasmModule = await WebAssembly.compileStreaming(fetch('./pkg/resonators_bg.wasm'));
+    await audioCtx.audioWorklet.addModule('./worklet.js');
+    workletNode = new AudioWorkletNode(audioCtx, 'resonators-processor', {
+      processorOptions: {
+        wasmModule,
+        sampleRate: audioCtx.sampleRate,
+        linFreqs: linFreqs(),
+        logFreqs: logFreqs(),
+      },
+    });
+    workletNode.port.onmessage = (e) => {
+      if (e.data.ready) return;
+      if (paused) return;
+      const { linMags, logMags, dspUs: us, peak: p } = e.data;
+      pendingLin.push(linMags);
+      pendingLog.push(logMags);
+      // Cap queue to ring-buffer width — older columns get overwritten anyway.
+      // Prevents an unbounded backlog if rAF stalls (background tab, etc).
+      if (pendingLin.length > TEX_COLS) pendingLin.splice(0, pendingLin.length - TEX_COLS);
+      if (pendingLog.length > TEX_COLS) pendingLog.splice(0, pendingLog.length - TEX_COLS);
+      dspUs = us;
+      peakDb = p > 0 ? 20 * Math.log10(p) : -Infinity;
+    };
+    audioCtx.createMediaStreamSource(micStream).connect(workletNode);
+    micActive = true;
+    micBtn.textContent = 'Stop mic';
+    document.getElementById('exportBtn').disabled = false;
+  }
+
+  function stopMic() {
+    micStream.getTracks().forEach(t => t.stop());
+    workletNode.disconnect();
+    audioCtx.close();
+    micActive = false;
+    micBtn.textContent = 'Start mic';
+  }
+
+  micBtn.addEventListener('click', startMic);
+
+  // --- texture writes ---
+  function flushPending() {
+    if (pendingLin.length) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, linMagTex);
+      for (const mags of pendingLin) {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, linHead, 0, 1, mags.length, gl.RED, gl.FLOAT, mags);
+        linHead = (linHead + 1) % TEX_COLS;
+      }
+      pendingLin.length = 0;
+    }
+    if (pendingLog.length) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, logMagTex);
+      for (const mags of pendingLog) {
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, logHead, 0, 1, mags.length, gl.RED, gl.FLOAT, mags);
+        logHead = (logHead + 1) % TEX_COLS;
+      }
+      pendingLog.length = 0;
+    }
+  }
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.floor(canvas.clientWidth * dpr);
+    const h = Math.floor(canvas.clientHeight * dpr);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      gl.viewport(0, 0, w, h);
+    }
+  }
+
+  function render() {
+    resize();
+    flushPending();
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(program);
+    gl.activeTexture(gl.TEXTURE0);
+    if (view === 'log') {
+      gl.bindTexture(gl.TEXTURE_2D, logMagTex);
+      gl.uniform1i(u.writeHead, logHead);
+      gl.uniform2f(u.texSize, TEX_COLS, logBinCount);
+    } else {
+      gl.bindTexture(gl.TEXTURE_2D, linMagTex);
+      gl.uniform1i(u.writeHead, linHead);
+      gl.uniform2f(u.texSize, TEX_COLS, LIN_BINS);
+    }
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, cmapTex);
+    gl.uniform1f(u.dbMin, floorDb);
+    gl.uniform1f(u.dbMax, floorDb + rangeDb);
+    gl.uniform2f(u.viewX, 0, 1);
+    gl.uniform2f(u.viewY, 0, 1);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  let lastStatsT = 0;
+  function frame(t) {
+    render();
+    if (t - lastStatsT > 1000 / STATS_HZ) {
+      updateStats();
+      lastStatsT = t;
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  const statsEl = document.getElementById('stats');
+  function updateStats() {
+    if (!micActive) { statsEl.textContent = ''; return; }
+    const sr = audioCtx.sampleRate;
+    const budgetUs = (128 / sr) * 1e6;
+    const pct = (dspUs / budgetUs * 100).toFixed(1);
+    const peakStr = isFinite(peakDb) ? `${peakDb.toFixed(0)} dB` : '−∞';
+    statsEl.textContent =
+      `${sr | 0} Hz · DSP ${dspUs.toFixed(0)} μs/quantum (${pct}% budget) · ` +
+      `peak ${peakStr} · ${LIN_BINS} lin + ${logBinCount} log`;
+  }
+
+  // --- note labels (log view only) ---
+  const notesEl = document.getElementById('notes');
+  function layoutNotes() {
+    notesEl.innerHTML = '';
+    if (view !== 'log') return;
+    for (let midi = LOG_LO_MIDI; midi <= LOG_HI_MIDI; midi++) {
+      if (midi % 12 !== 0) continue;  // C only (octave markers)
+      const octave = Math.floor(midi / 12) - 1;
+      const yFrac = (midi - LOG_LO_MIDI) * LOG_BINS_PER_SEMITONE / logBinCount;
+      const div = document.createElement('div');
+      div.textContent = 'C' + octave;
+      div.style.bottom = `${yFrac * 100}%`;
+      notesEl.appendChild(div);
+    }
+  }
+  layoutNotes();
+
+  // --- controls ---
+  document.getElementById('view').addEventListener('change', (e) => {
+    view = e.target.value;
+    layoutNotes();
+  });
+  document.getElementById('cmap').addEventListener('change', (e) => setColormap(e.target.value));
+
+  const floorEl = document.getElementById('floor');
+  const floorV = document.getElementById('floorV');
+  floorEl.addEventListener('input', () => { floorDb = +floorEl.value; floorV.textContent = floorDb; });
+  const rangeEl = document.getElementById('range');
+  const rangeV = document.getElementById('rangeV');
+  rangeEl.addEventListener('input', () => { rangeDb = +rangeEl.value; rangeV.textContent = rangeDb; });
+
+  const pauseHint = document.getElementById('pauseHint');
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      paused = !paused;
+      pauseHint.classList.toggle('show', paused);
+    }
+  });
+
+  document.getElementById('exportBtn').addEventListener('click', () => {
+    canvas.toBlob((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `resonators-${Date.now()}.png`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }, 'image/png');
+  });
+</script>
+</body>
+</html>

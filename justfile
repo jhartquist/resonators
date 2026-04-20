@@ -33,5 +33,11 @@ wasm-bench: wasm-build
     cp -R crates/resonators-wasm/pkg examples/web-bench/pkg
     cd examples/web-bench && python3 -m http.server 8000
 
+# Live mic spectrogram demo (open http://localhost:8000)
+wasm-spectrogram: wasm-build
+    rm -rf examples/web-spectrogram/pkg
+    cp -R crates/resonators-wasm/pkg examples/web-spectrogram/pkg
+    cd examples/web-spectrogram && python3 -m http.server 8000
+
 # Everything
 ci: test py-test
