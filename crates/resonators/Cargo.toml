@@ -1,7 +1,16 @@
 [package]
 name = "resonators"
-version = "0.1.0"
-edition = "2024"
+description = "Rust implementation of the Resonate algorithm for low-latency spectral analysis."
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }

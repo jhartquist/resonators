@@ -1,7 +1,13 @@
 [package]
 name = "resonators-wasm"
-version = "0.1.0"
-edition = "2024"
+description = "WASM bindings for the resonators crate."
+publish = false
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 
 [lib]
 crate-type = ["cdylib", "rlib"]
