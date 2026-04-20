@@ -2,68 +2,102 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>resonators wasm benchmark</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>resonators WASM benchmark</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2em auto; padding: 0 1em; color: #222; }
-    h1 { margin-bottom: 0.2em; }
-    code { background: #f4f4f4; padding: 1px 5px; border-radius: 3px; }
-    table { border-collapse: collapse; margin: 1em 0; }
-    th, td { padding: 6px 14px; border-bottom: 1px solid #ddd; text-align: right; }
+    :root {
+      --fg: #1a1a1a;
+      --muted: #888;
+      --line: #e5e5e5;
+      --bg: #fafafa;
+    }
+    html, body { background: var(--bg); }
+    body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      max-width: 640px;
+      margin: 4em auto;
+      padding: 0 1.5em;
+      color: var(--fg);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    h1 { font-size: 14px; font-weight: 600; margin: 0 0 2em; letter-spacing: 0.02em; }
+    .meta { color: var(--muted); margin: 0 0 2em; }
+    .meta div { margin-bottom: 2px; }
+    button {
+      font: inherit;
+      background: var(--fg);
+      color: var(--bg);
+      border: none;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+    button:disabled { background: var(--muted); cursor: default; }
+    #status { margin-left: 12px; color: var(--muted); }
+    table { border-collapse: collapse; margin: 2em 0 0; width: 100%; }
+    th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); }
     th:first-child, td:first-child { text-align: left; }
-    th { background: #f8f8f8; }
-    button { padding: 8px 16px; font-size: 15px; cursor: pointer; }
-    .meta { color: #666; font-size: 14px; line-height: 1.5; }
+    th { font-weight: 500; color: var(--muted); border-bottom-color: var(--fg); }
+    tr.pending td { color: var(--muted); }
+    code { background: #efefef; padding: 1px 5px; border-radius: 3px; }
     .ok { color: #1a7f37; font-weight: 600; }
     .bad { color: #cf222e; font-weight: 600; }
-    .running { color: #888; font-style: italic; }
+    .gh {
+      position: fixed;
+      top: 16px; right: 16px;
+      width: 30px; height: 30px;
+      display: grid; place-items: center;
+      color: var(--muted);
+      border-radius: 4px;
+      transition: color 120ms, background 120ms;
+    }
+    .gh:hover { color: var(--fg); background: #efefef; }
+    .gh svg { width: 18px; height: 18px; display: block; }
   </style>
 </head>
 <body>
-  <h1>resonators wasm benchmark</h1>
-  <p class="meta">
-    Browser: <span id="ua"></span><br>
-    Browser supports WASM SIMD: <span id="simd"></span> (capability check; does not reflect whether the loaded wasm uses SIMD instructions)
-  </p>
+  <a class="gh" href="https://github.com/jhartquist/resonators" target="_blank" rel="noopener" aria-label="GitHub">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.3 1.9 1.3 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.4-1.3-5.4-6 0-1.3.5-2.4 1.3-3.2-.1-.3-.6-1.5.1-3.2 0 0 1-.3 3.4 1.3 1-.3 2-.4 3.1-.4 1 0 2.1.1 3 .4 2.4-1.6 3.4-1.3 3.4-1.3.7 1.7.2 3 .1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1.2.9 2.4v3.6c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/>
+    </svg>
+  </a>
 
-  <p>
-    Each row: construct a <code>ResonatorBank</code> with N log-spaced bins (30 Hz – 8 kHz),
-    process 1 s of pseudo-noise (44100 samples), repeat 20 iterations, report mean.
-  </p>
+  <h1><code>resonators</code> WASM benchmark</h1>
 
-  <button id="run">Run benchmark</button>
-  <span id="status"></span>
+  <div class="meta">
+    <p>
+      Each row builds a <code>ResonatorBank</code> of N log-spaced bins between 30 Hz and 8 kHz,
+      runs it over one second of pseudo-random noise at 48 kHz, and reports the
+      mean of 20 iterations after a short warmup.
+    </p>
+    <p>
+      Web Audio processes sound in fixed 128-sample chunks: the browser calls each
+      <code>AudioWorklet</code>'s <code>process()</code> with 128 samples at a time and
+      expects the next block to be ready before the current one finishes playing. At
+      48 kHz that's 2,667 μs per callback. The <code>% budget</code> column shows how
+      much of that window each configuration consumes — anything well under 100% can
+      run live alongside the rest of the audio graph.
+    </p>
+    <p>WASM SIMD support: <span id="simd"></span></p>
+  </div>
+
+  <button id="run">Run benchmark</button><span id="status"></span>
 
   <table id="results" hidden>
     <thead>
       <tr>
-        <th>bins</th>
+        <th># bins</th>
         <th>ns / sample</th>
-        <th>μs / 128-sample quantum</th>
-        <th>% of audio budget @ 44.1 kHz</th>
+        <th>μs / quantum</th>
+        <th>% budget</th>
       </tr>
     </thead>
     <tbody></tbody>
   </table>
 
-  <p class="meta">
-    Audio budget per quantum at 44.1 kHz: <code>128 / 44100 ≈ 2902 μs</code>.
-    A single AudioWorklet must complete its <code>process()</code> call within this time.
-  </p>
-
   <script type="module">
-    import init, { ResonatorBank } from './pkg/resonators.js';
-
-    const SAMPLE_RATE = 44100;
-    const N_SAMPLES = SAMPLE_RATE;
-    const WARMUP_ITERATIONS = 5;
-    const ITERATIONS = 20;
     const BIN_COUNTS = [88, 264, 440, 880];
-    const QUANTUM = 128;
-    const QUANTUM_BUDGET_US = (QUANTUM / SAMPLE_RATE) * 1e6;
 
-    document.getElementById('ua').textContent = navigator.userAgent;
-
-    // Feature-detect WASM SIMD: validate a 1-instruction module containing v128.const.
     const simdBytes = new Uint8Array([
       0,97,115,109,1,0,0,0,1,5,1,96,0,1,123,3,2,1,0,
       10,10,1,8,0,65,0,253,15,253,98,11
@@ -73,76 +107,56 @@
     simdEl.textContent = simdOk ? 'yes' : 'no';
     simdEl.className = simdOk ? 'ok' : 'bad';
 
-    function logSpacedFreqs(n) {
-      const freqs = new Float32Array(n);
-      const lo = Math.log(30);
-      const hi = Math.log(8000);
-      const denom = Math.max(1, n - 1);
-      for (let i = 0; i < n; i++) {
-        freqs[i] = Math.exp(lo + (hi - lo) * i / denom);
-      }
-      return freqs;
-    }
+    const runBtn = document.getElementById('run');
+    const status = document.getElementById('status');
+    const table = document.getElementById('results');
+    const tbody = table.querySelector('tbody');
 
-    function makeNoise(n) {
-      const sig = new Float32Array(n);
-      let x = 0xDEADBEEF | 0;
-      for (let i = 0; i < n; i++) {
-        x = (Math.imul(x, 1664525) + 1013904223) | 0;
-        sig[i] = x / 2147483648;
-      }
-      return sig;
-    }
-
-    async function bench() {
-      const status = document.getElementById('status');
-      const tbody = document.querySelector('#results tbody');
-      const table = document.getElementById('results');
+    function renderSkeleton() {
       tbody.innerHTML = '';
-      table.hidden = false;
-      status.textContent = ' running…';
-      status.className = 'running';
-
-      // yield so the "running" text paints
-      await new Promise(r => setTimeout(r, 0));
-
-      const signal = makeNoise(N_SAMPLES);
-
-      for (const nBins of BIN_COUNTS) {
-        const freqs = logSpacedFreqs(nBins);
-        const bank = new ResonatorBank(freqs, SAMPLE_RATE);
-        for (let i = 0; i < WARMUP_ITERATIONS; i++) {
-          bank.process_samples(signal);
-        }
-
-        const t0 = performance.now();
-        for (let i = 0; i < ITERATIONS; i++) {
-          bank.process_samples(signal);
-        }
-        const elapsed = performance.now() - t0;
-
-        const nsPerSample = elapsed * 1e6 / ITERATIONS / N_SAMPLES;
-        const usPerQuantum = nsPerSample * QUANTUM / 1000;
-        const pct = (usPerQuantum / QUANTUM_BUDGET_US) * 100;
-
-        const row = document.createElement('tr');
-        row.innerHTML = `
-          <td>${nBins}</td>
-          <td>${nsPerSample.toFixed(0)}</td>
-          <td>${usPerQuantum.toFixed(1)}</td>
-          <td>${pct.toFixed(2)}%</td>
-        `;
-        tbody.appendChild(row);
-
-        bank.free();
+      for (const n of BIN_COUNTS) {
+        const tr = document.createElement('tr');
+        tr.className = 'pending';
+        tr.innerHTML = `<td>${n}</td><td>—</td><td>—</td><td>—</td>`;
+        tbody.appendChild(tr);
       }
-
-      status.textContent = ' done.';
-      status.className = '';
     }
 
-    await init();
-    document.getElementById('run').addEventListener('click', bench);
+    function fillRow(index, { bins, nsPerSample, usPerQuantum, pct }) {
+      const tr = tbody.children[index];
+      tr.className = '';
+      tr.innerHTML = `
+        <td>${bins}</td>
+        <td>${nsPerSample.toFixed(0)}</td>
+        <td>${usPerQuantum.toFixed(0)}</td>
+        <td>${pct.toFixed(2)}%</td>
+      `;
+    }
+
+    runBtn.addEventListener('click', () => {
+      runBtn.disabled = true;
+      table.hidden = false;
+      renderSkeleton();
+      status.textContent = ' starting…';
+
+      const worker = new Worker('./bench.worker.js', { type: 'module' });
+      worker.onmessage = (e) => {
+        const msg = e.data;
+        if (msg.type === 'start') {
+          status.textContent = ` running ${msg.bins} bins (${msg.index + 1}/${BIN_COUNTS.length})…`;
+        } else if (msg.type === 'row') {
+          fillRow(msg.index, msg);
+        } else if (msg.type === 'done') {
+          status.textContent = ' done.';
+          runBtn.disabled = false;
+          worker.terminate();
+        } else if (msg.type === 'error') {
+          status.textContent = ` error: ${msg.message}`;
+          runBtn.disabled = false;
+          worker.terminate();
+        }
+      };
+    });
   </script>
 </body>
 </html>

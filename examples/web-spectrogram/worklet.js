@@ -2,12 +2,26 @@
 // init constructs a TextDecoder, which AudioWorkletGlobalScope doesn't provide.
 // ES module imports execute in declaration order, so this works.
 import './polyfill.js';
-import init, { ResonatorBank } from './pkg/resonators.js';
+import init, { ResonatorBank, heuristic_alpha } from './pkg/resonators.js';
 
 // Chrome's AudioWorkletGlobalScope doesn't expose `performance`. Date.now() is
 // integer-ms only, but accumulating across many quanta gives a meaningful average
 // since DSP work per quantum is sub-ms.
 const NOW = typeof performance !== 'undefined' ? () => performance.now() : () => Date.now();
+
+// Apply a multiplicative scale to the heuristic tau of each resonator.
+// Identity: alpha = 1 - exp(-dt/tau), so scaling tau by k gives
+// alpha' = 1 - (1 - alpha)^(1/k). Returns null when scale is 1.0
+// so the Rust default heuristic is used directly.
+function scaleAlphas(freqs, sr, scale) {
+  if (scale === 1.0) return null;
+  const out = new Float32Array(freqs.length);
+  for (let i = 0; i < freqs.length; i++) {
+    const a = heuristic_alpha(freqs[i], sr);
+    out[i] = 1 - Math.pow(1 - a, 1 / scale);
+  }
+  return out;
+}
 
 class ResonatorsProcessor extends AudioWorkletProcessor {
   constructor({ processorOptions }) {
@@ -19,8 +33,11 @@ class ResonatorsProcessor extends AudioWorkletProcessor {
 
     init({ module_or_path: processorOptions.wasmModule }).then(() => {
       const sr = processorOptions.sampleRate;
-      this.linBank = new ResonatorBank(processorOptions.linFreqs, sr);
-      this.logBank = new ResonatorBank(processorOptions.logFreqs, sr);
+      const tauScale = processorOptions.tauScale ?? 1.0;
+      const linAlphas = scaleAlphas(processorOptions.linFreqs, sr, tauScale);
+      const logAlphas = scaleAlphas(processorOptions.logFreqs, sr, tauScale);
+      this.linBank = new ResonatorBank(processorOptions.linFreqs, sr, linAlphas);
+      this.logBank = new ResonatorBank(processorOptions.logFreqs, sr, logAlphas);
       this.port.postMessage({ ready: true });
     });
   }

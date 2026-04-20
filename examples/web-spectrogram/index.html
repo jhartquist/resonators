@@ -2,149 +2,581 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>resonators spectrogram</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>resonators · live spectrogram</title>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; }
-  body {
-    background: #0a0a0a;
-    color: #e0e0e0;
-    font-family: system-ui, sans-serif;
+  :root {
+    --bg: #0a0a0b;
+    --surface: #141417;
+    --surface-2: #1a1a1e;
+    --border: #26262c;
+    --text: #e8e8eb;
+    --muted: #8a8a92;
+    --dim: #4a4a52;
+    --accent: #f5f5f7;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, "Cascadia Mono", monospace;
+    --sidebar-w: 300px;
+    --statusbar-h: 34px;
+    --radius: 3px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono);
+    font-size: 14px;
+    line-height: 1.55;
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Layout shell */
+  .app {
     display: flex;
     flex-direction: column;
+    height: 100vh;
   }
-  #controls {
-    padding: 10px 16px;
+  .main {
     display: flex;
-    gap: 18px;
+    flex: 1;
+    min-height: 0;
+  }
+  .stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    background: var(--bg);
+  }
+  canvas {
+    display: block;
+    width: 100%; height: 100%;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 0;
+    background: var(--surface);
+    overflow: hidden;
+    border-left: 1px solid transparent;
+    transition: width 220ms cubic-bezier(.2,.8,.2,1),
+                border-color 220ms;
+    flex-shrink: 0;
+  }
+  body.sidebar-open .sidebar {
+    width: var(--sidebar-w);
+    border-left-color: var(--border);
+  }
+  .sidebar-inner {
+    width: var(--sidebar-w);
+    height: 100%;
+    overflow-y: auto;
+    padding: 22px 22px 32px;
+  }
+  .sidebar-header {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    background: #181818;
-    border-bottom: 1px solid #2a2a2a;
-    font-size: 13px;
-    flex-wrap: wrap;
+    margin: -6px -6px 22px;
   }
-  #controls label { display: flex; align-items: center; gap: 6px; }
-  #controls button {
-    background: #2a6bd1;
-    color: white;
+  .sidebar-header .title {
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 6px;
+  }
+  .close-btn {
+    width: 32px; height: 32px;
+    display: grid; place-items: center;
+    color: var(--muted);
+    background: transparent;
     border: none;
-    padding: 6px 14px;
-    border-radius: 4px;
     cursor: pointer;
-    font: inherit;
+    border-radius: var(--radius);
   }
-  #controls button:hover { background: #1f5bb8; }
-  #controls button:disabled { background: #444; cursor: not-allowed; }
-  #controls select, #controls input[type="range"] {
-    background: #2a2a2a;
-    color: #e0e0e0;
-    border: 1px solid #444;
-    padding: 4px 8px;
-    border-radius: 3px;
-    font: inherit;
+  .close-btn:hover { color: var(--text); background: var(--surface-2); }
+  .close-btn svg { width: 16px; height: 16px; }
+
+  .section + .section { margin-top: 22px; padding-top: 22px; border-top: 1px solid var(--border); }
+  .section-label {
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin-bottom: 12px;
   }
-  #stage { flex: 1; position: relative; overflow: hidden; }
-  canvas { display: block; width: 100%; height: 100%; }
-  #notes {
+
+  .control { margin-bottom: 14px; }
+  .control:last-child { margin-bottom: 0; }
+  .control label {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .control label .val {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Form controls (dark mode) */
+  select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    padding: 9px 28px 9px 10px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(-45deg, transparent 50%, var(--muted) 50%);
+    background-position: calc(100% - 14px) 52%, calc(100% - 9px) 52%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+  }
+  select:hover { border-color: var(--dim); }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    background: transparent;
+    height: 22px;
+    cursor: pointer;
+    margin: 0;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    background: var(--text);
+    border-radius: 50%;
+    margin-top: -5px;
+    cursor: grab;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 12px; height: 12px;
+    background: var(--text);
+    border-radius: 50%;
+    border: none;
+    cursor: grab;
+  }
+  input[type="range"]:active::-webkit-slider-thumb { cursor: grabbing; }
+  input[type="range"]:active::-moz-range-thumb { cursor: grabbing; }
+
+  .btn {
+    width: 100%;
+    font: inherit;
+    font-size: 13px;
+    background: var(--surface-2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 10px 12px;
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: background 120ms, border-color 120ms, color 120ms;
+  }
+  .btn:hover:not(:disabled) { background: var(--bg); border-color: var(--dim); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn + .btn { margin-top: 8px; }
+  .btn.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+    font-weight: 500;
+  }
+  .btn.primary:hover:not(:disabled) { background: #fff; border-color: #fff; }
+  .pause-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .pause-btn svg { width: 13px; height: 13px; display: block; flex-shrink: 0; }
+  .pause-btn .ic-play { display: none; }
+  body.paused #pauseToggle .ic-pause { display: none; }
+  body.paused #pauseToggle .ic-play { display: block; }
+
+  /* Segmented button group */
+  .seg {
+    display: flex;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .seg-btn {
+    flex: 1;
+    font: inherit;
+    font-size: 13px;
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    padding: 8px 0;
+    cursor: pointer;
+    transition: color 120ms, background 120ms;
+  }
+  .seg-btn:hover { color: var(--text); }
+  .seg-btn.active {
+    background: var(--text);
+    color: var(--bg);
+    font-weight: 500;
+  }
+
+  /* Corner icons (over canvas, top-right) */
+  .corner {
+    position: absolute;
+    top: 14px; right: 14px;
+    display: flex;
+    gap: 4px;
+    z-index: 10;
+  }
+  .icon-btn {
+    width: 36px; height: 36px;
+    display: grid; place-items: center;
+    color: var(--muted);
+    background: rgba(10, 10, 11, 0.55);
+    border: 1px solid rgba(38, 38, 44, 0.6);
+    cursor: pointer;
+    border-radius: var(--radius);
+    text-decoration: none;
+    transition: color 120ms, background 120ms, border-color 120ms;
+  }
+  .icon-btn:hover {
+    color: var(--text);
+    background: rgba(10, 10, 11, 0.85);
+    border-color: var(--border);
+  }
+  .icon-btn svg { width: 19px; height: 19px; display: block; }
+
+  /* Axis labels (left edge of canvas) */
+  .axis-labels {
     position: absolute;
     left: 0; top: 0; bottom: 0;
-    width: 44px;
+    width: 56px;
     pointer-events: none;
-    color: #aaa;
+    color: var(--muted);
     font-size: 11px;
-    font-family: ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    z-index: 5;
   }
-  #notes div {
+  .axis-labels div {
     position: absolute;
-    right: 6px;
+    right: 8px;
     transform: translateY(50%);
-    text-shadow: 0 0 3px #000;
+    text-shadow: 0 0 4px #000, 0 1px 3px #000;
+    font-variant-numeric: tabular-nums;
   }
-  #stats {
+
+  /* Landing */
+  .landing {
     position: absolute;
-    top: 8px; right: 12px;
-    font-family: ui-monospace, monospace;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: var(--bg);
+    z-index: 20;
+  }
+  .landing.hidden {
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 220ms ease-out;
+  }
+  .landing-card {
+    text-align: center;
+    max-width: 460px;
+    padding: 0 28px;
+    animation: fadeUp 480ms cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .landing-card .brand-mark {
     font-size: 11px;
-    color: #ccc;
-    background: rgba(0,0,0,0.55);
-    padding: 5px 10px;
-    border-radius: 3px;
-    pointer-events: none;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
   }
-  #pauseHint {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 32px;
-    color: rgba(255,255,255,0.7);
-    pointer-events: none;
-    display: none;
+  .landing-card .brand-mark::before,
+  .landing-card .brand-mark::after {
+    content: '';
+    height: 1px;
+    background: var(--border);
+    width: 36px;
   }
-  #pauseHint.show { display: block; }
-  #help { padding: 10px; color: #666; font-size: 12px; text-align: center; }
+  .landing-card h1 {
+    font-size: 26px;
+    font-weight: 500;
+    margin: 0 0 16px;
+    letter-spacing: -0.01em;
+  }
+  .landing-card p {
+    color: var(--muted);
+    margin: 0 0 32px;
+    line-height: 1.65;
+    font-size: 14px;
+  }
+  .start-btn {
+    font: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    background: var(--text);
+    color: var(--bg);
+    border: none;
+    padding: 14px 32px;
+    cursor: pointer;
+    border-radius: var(--radius);
+    letter-spacing: 0.02em;
+    transition: background 120ms, transform 120ms;
+  }
+  .start-btn:hover {
+    background: #fff;
+    transform: translateY(-1px);
+  }
+  .start-btn:active { transform: translateY(0); }
+  .landing-card .footnote {
+    margin-top: 24px;
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: 0.04em;
+    line-height: 1.7;
+  }
+  .landing-card .footnote .err {
+    color: #d96f6f;
+  }
+
+  /* Status bar */
+  .statusbar {
+    height: var(--statusbar-h);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+  .statusbar .brand {
+    color: var(--text);
+  }
+  .statusbar .stats {
+    display: flex;
+    gap: 22px;
+    font-variant-numeric: tabular-nums;
+  }
+  .statusbar .live {
+    color: var(--muted);
+  }
+  .statusbar .live::before {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #4ade80;
+    margin-right: 8px;
+    transform: translateY(-1px);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  body.paused .statusbar .live { color: var(--text); }
+  body.paused .statusbar .live::before {
+    background: var(--muted);
+    animation: none;
+  }
+
+  /* Visibility tied to mic state */
+  body:not(.mic-on) .corner,
+  body:not(.mic-on) .axis-labels { visibility: hidden; }
+  body:not(.mic-on) .statusbar { display: none; }
+
+  /* Mobile sidebar = full-screen overlay */
+  @media (max-width: 600px) {
+    .sidebar {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      transform: translateX(100%);
+      transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+      border-left: none;
+      z-index: 100;
+    }
+    body.sidebar-open .sidebar {
+      transform: translateX(0);
+      width: 100%;
+    }
+    .sidebar-inner { width: 100%; }
+    /* Don't push canvas on mobile (overlay instead) */
+    body.sidebar-open .stage { /* unchanged */ }
+  }
 </style>
 </head>
 <body>
-  <div id="controls">
-    <button id="micBtn">Start mic</button>
-    <label>View:
-      <select id="view">
-        <option value="log">Log (musical)</option>
-        <option value="lin">Linear</option>
-      </select>
-    </label>
-    <label>Colormap:
-      <select id="cmap">
-        <option>viridis</option>
-        <option selected>magma</option>
-        <option>inferno</option>
-        <option>plasma</option>
-        <option>grayscale</option>
-      </select>
-    </label>
-    <label>Floor: <input type="range" id="floor" min="-100" max="-20" value="-80" step="1"><span id="floorV">-80</span> dB</label>
-    <label>Contrast: <input type="range" id="range" min="20" max="80" value="40" step="1"><span id="rangeV">40</span> dB</label>
-    <button id="exportBtn" disabled>Export PNG</button>
+  <div class="app">
+    <main class="main">
+      <div class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+        <div class="axis-labels" id="axisLabels"></div>
+
+        <div class="corner">
+          <a class="icon-btn" id="ghLink" href="https://github.com/jhartquist/resonators" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.3 1.9 1.3 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.4-1.3-5.4-6 0-1.3.5-2.4 1.3-3.2-.1-.3-.6-1.5.1-3.2 0 0 1-.3 3.4 1.3 1-.3 2-.4 3.1-.4 1 0 2.1.1 3 .4 2.4-1.6 3.4-1.3 3.4-1.3.7 1.7.2 3 .1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1.2.9 2.4v3.6c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/>
+            </svg>
+          </a>
+          <button class="icon-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="landing" id="landing">
+          <div class="landing-card">
+            <div class="brand-mark">resonators</div>
+            <h1>live spectrogram</h1>
+            <p>
+              880 resonant filters tracking the audio spectrum in real time,
+              running entirely in your browser via WebAssembly + SIMD.
+            </p>
+            <button class="start-btn" id="startBtn" type="button">Start microphone</button>
+            <div class="footnote" id="landingNote">
+              <div>requires microphone access</div>
+              <div>spacebar or tap canvas to pause once running</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="sidebar" id="sidebar" aria-hidden="true">
+        <div class="sidebar-inner">
+          <div class="sidebar-header">
+            <span class="title">settings</span>
+            <button class="close-btn" id="closeBtn" type="button" aria-label="Close">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <line x1="6" y1="6" x2="18" y2="18"/>
+                <line x1="18" y1="6" x2="6" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="section">
+            <div class="section-label">playback</div>
+            <button class="btn pause-btn" id="pauseToggle" type="button" disabled>
+              <svg class="ic-pause" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <rect x="4" y="3" width="3" height="10" rx="0.5"/>
+                <rect x="9" y="3" width="3" height="10" rx="0.5"/>
+              </svg>
+              <svg class="ic-play" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M5 3 L13 8 L5 13 Z"/>
+              </svg>
+              <span id="pauseLabel">Pause</span>
+            </button>
+          </div>
+
+          <div class="section">
+            <div class="section-label">display</div>
+            <div class="control">
+              <label>view</label>
+              <div class="seg" id="viewSeg" role="tablist">
+                <button class="seg-btn active" type="button" data-view="log" aria-pressed="true">log</button>
+                <button class="seg-btn" type="button" data-view="lin" aria-pressed="false">linear</button>
+              </div>
+            </div>
+            <div class="control">
+              <label for="cmap">colormap</label>
+              <select id="cmap">
+                <option>viridis</option>
+                <option selected>magma</option>
+                <option>plasma</option>
+                <option>grayscale</option>
+              </select>
+            </div>
+            <div class="control">
+              <label for="floor">floor <span class="val" id="floorV">−80 dB</span></label>
+              <input type="range" id="floor" min="-100" max="-20" value="-80" step="1">
+            </div>
+            <div class="control">
+              <label for="range">contrast <span class="val" id="rangeV">40 dB</span></label>
+              <input type="range" id="range" min="20" max="80" value="40" step="1">
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-label">export</div>
+            <button class="btn" id="exportBtn" type="button" disabled>Save PNG</button>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="statusbar">
+      <span class="brand">resonators</span>
+      <div class="stats">
+        <span class="live" id="liveStat">live</span>
+        <span id="viewStat">log</span>
+        <span id="srStat">— Hz</span>
+        <span id="dspStat">— %</span>
+        <span id="peakStat">— dB</span>
+      </div>
+    </footer>
   </div>
-  <div id="stage">
-    <div id="notes"></div>
-    <canvas id="canvas"></canvas>
-    <div id="stats"></div>
-    <div id="pauseHint">⏸ paused</div>
-  </div>
-  <div id="help">spacebar to pause · mic input only · refresh to release mic</div>
 
 <script type="module">
   // --- config ---
-  const TEX_COLS = 1024;                 // ring buffer width (columns of history)
-  const LOG_BINS_PER_SEMITONE = 3;       // 88 semitones × 3 = 264 bins
-  const LOG_LO_MIDI = 21;                // A0
-  const LOG_HI_MIDI = 108;               // C8
+  const TEX_COLS = 1024;
+  const LOG_BINS_PER_SEMITONE = 5;
+  const LOG_LO_MIDI = 21;            // A0
+  const LOG_HI_MIDI = 108;           // C8
   const LIN_BINS = 440;
   const LIN_LO_HZ = 30;
   const LIN_HI_HZ = 8000;
   const STATS_HZ = 5;
+  const HZ_LABELS = [500, 1000, 2000, 4000, 6000, 8000];
 
-  function midiToHz(midi) { return 440.0 * Math.pow(2, (midi - 69) / 12); }
-
+  function midiToHz(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
   function logFreqs() {
     const n = (LOG_HI_MIDI - LOG_LO_MIDI + 1) * LOG_BINS_PER_SEMITONE;
     const out = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      out[i] = midiToHz(LOG_LO_MIDI + i / LOG_BINS_PER_SEMITONE);
-    }
+    for (let i = 0; i < n; i++) out[i] = midiToHz(LOG_LO_MIDI + i / LOG_BINS_PER_SEMITONE);
     return out;
   }
   function linFreqs() {
     const out = new Float32Array(LIN_BINS);
-    for (let i = 0; i < LIN_BINS; i++) {
-      out[i] = LIN_LO_HZ + (LIN_HI_HZ - LIN_LO_HZ) * i / (LIN_BINS - 1);
-    }
+    for (let i = 0; i < LIN_BINS; i++) out[i] = LIN_LO_HZ + (LIN_HI_HZ - LIN_LO_HZ) * i / (LIN_BINS - 1);
     return out;
   }
   const logBinCount = (LOG_HI_MIDI - LOG_LO_MIDI + 1) * LOG_BINS_PER_SEMITONE;
 
-  // 8-stop colormaps (GPU interpolates with LINEAR filter)
   const COLORMAPS = {
     viridis:   [68,1,84, 64,67,135, 41,120,142, 32,144,140, 68,190,112, 121,209,81, 189,222,38, 253,231,37],
     magma:     [0,0,4, 24,15,61, 68,15,118, 121,28,109, 187,55,84, 233,90,52, 252,158,73, 252,253,191],
@@ -158,7 +590,7 @@
   const gl = canvas.getContext('webgl2', {
     antialias: false,
     premultipliedAlpha: false,
-    preserveDrawingBuffer: true,  // needed for canvas.toBlob() PNG export
+    preserveDrawingBuffer: true,
   });
   if (!gl) throw new Error('WebGL2 required');
 
@@ -169,21 +601,19 @@
       vUV = aPosition * 0.5 + 0.5;
       gl_Position = vec4(aPosition, 0.0, 1.0);
     }`;
-
   const FRAG = `#version 300 es
     precision highp float;
     uniform sampler2D uMags;
     uniform sampler2D uCmap;
     uniform int uWriteHead;
-    uniform vec2 uTexSize;     // (cols, bins)
+    uniform vec2 uTexSize;
     uniform float uDbMin;
     uniform float uDbMax;
-    uniform vec2 uViewX;       // visible time range [0..1] of buffer
-    uniform vec2 uViewY;       // visible freq range [0..1] of bins
+    uniform vec2 uViewX;
+    uniform vec2 uViewY;
     in vec2 vUV;
     out vec4 outColor;
     void main() {
-      // tFrac=0 = oldest visible column, tFrac=1 = newest. Newest column index = uWriteHead - 1.
       float tFrac = mix(uViewX.x, uViewX.y, vUV.x);
       float colIdx = mod(float(uWriteHead - 1) - (1.0 - tFrac) * uTexSize.x, uTexSize.x);
       float bin = mix(uViewY.x, uViewY.y, vUV.y) * uTexSize.y;
@@ -198,9 +628,7 @@
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
     gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-      throw new Error(gl.getShaderInfoLog(s));
-    }
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
     return s;
   }
   const program = gl.createProgram();
@@ -210,7 +638,6 @@
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
   gl.useProgram(program);
 
-  // fullscreen quad
   const vbo = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
@@ -231,9 +658,6 @@
   gl.uniform1i(u.mags, 0);
   gl.uniform1i(u.cmap, 1);
 
-  // R32F with LINEAR filtering blends between adjacent bins/columns, smoothing
-  // sampling stripes when canvas pixels don't align to bin/column boundaries.
-  // Requires OES_texture_float_linear (universal on real GPUs).
   const linearFloat = !!gl.getExtension('OES_texture_float_linear');
   const magFilter = linearFloat ? gl.LINEAR : gl.NEAREST;
 
@@ -281,52 +705,51 @@
 
   // --- mic + worklet ---
   let audioCtx = null, workletNode = null, micStream = null, micActive = false;
-  const micBtn = document.getElementById('micBtn');
 
   async function startMic() {
-    if (micActive) return stopMic();
-    audioCtx = new AudioContext();
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
-    const wasmModule = await WebAssembly.compileStreaming(fetch('./pkg/resonators_bg.wasm'));
-    await audioCtx.audioWorklet.addModule('./worklet.js');
-    workletNode = new AudioWorkletNode(audioCtx, 'resonators-processor', {
-      processorOptions: {
-        wasmModule,
-        sampleRate: audioCtx.sampleRate,
-        linFreqs: linFreqs(),
-        logFreqs: logFreqs(),
-      },
-    });
-    workletNode.port.onmessage = (e) => {
-      if (e.data.ready) return;
-      if (paused) return;
-      const { linMags, logMags, dspUs: us, peak: p } = e.data;
-      pendingLin.push(linMags);
-      pendingLog.push(logMags);
-      // Cap queue to ring-buffer width — older columns get overwritten anyway.
-      // Prevents an unbounded backlog if rAF stalls (background tab, etc).
-      if (pendingLin.length > TEX_COLS) pendingLin.splice(0, pendingLin.length - TEX_COLS);
-      if (pendingLog.length > TEX_COLS) pendingLog.splice(0, pendingLog.length - TEX_COLS);
-      dspUs = us;
-      peakDb = p > 0 ? 20 * Math.log10(p) : -Infinity;
-    };
-    audioCtx.createMediaStreamSource(micStream).connect(workletNode);
-    micActive = true;
-    micBtn.textContent = 'Stop mic';
-    document.getElementById('exportBtn').disabled = false;
+    document.getElementById('landingNote').innerHTML = 'requesting microphone access…';
+    try {
+      audioCtx = new AudioContext();
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      const wasmModule = await WebAssembly.compileStreaming(fetch('./pkg/resonators_bg.wasm'));
+      await audioCtx.audioWorklet.addModule('./worklet.js');
+      workletNode = new AudioWorkletNode(audioCtx, 'resonators-processor', {
+        processorOptions: {
+          wasmModule,
+          sampleRate: audioCtx.sampleRate,
+          linFreqs: linFreqs(),
+          logFreqs: logFreqs(),
+          tauScale: 2.0,
+        },
+      });
+      workletNode.port.onmessage = (e) => {
+        if (e.data.ready) return;
+        if (paused) return;
+        const { linMags, logMags, dspUs: us, peak: p } = e.data;
+        pendingLin.push(linMags);
+        pendingLog.push(logMags);
+        if (pendingLin.length > TEX_COLS) pendingLin.splice(0, pendingLin.length - TEX_COLS);
+        if (pendingLog.length > TEX_COLS) pendingLog.splice(0, pendingLog.length - TEX_COLS);
+        dspUs = us;
+        peakDb = p > 0 ? 20 * Math.log10(p) : -Infinity;
+      };
+      audioCtx.createMediaStreamSource(micStream).connect(workletNode);
+      micActive = true;
+      document.body.classList.add('mic-on');
+      document.getElementById('landing').classList.add('hidden');
+      document.getElementById('pauseToggle').disabled = false;
+      document.getElementById('pauseLabel').textContent = 'Pause';
+      document.getElementById('exportBtn').disabled = false;
+      layoutAxis();
+    } catch (err) {
+      document.getElementById('landingNote').innerHTML =
+        `<span class="err">${err.name === 'NotAllowedError' ? 'microphone permission denied' : 'could not start microphone'}</span>`;
+    }
   }
 
-  function stopMic() {
-    micStream.getTracks().forEach(t => t.stop());
-    workletNode.disconnect();
-    audioCtx.close();
-    micActive = false;
-    micBtn.textContent = 'Start mic';
-  }
-
-  micBtn.addEventListener('click', startMic);
+  document.getElementById('startBtn').addEventListener('click', startMic);
 
   // --- texture writes ---
   function flushPending() {
@@ -355,8 +778,7 @@
     const w = Math.floor(canvas.clientWidth * dpr);
     const h = Math.floor(canvas.clientHeight * dpr);
     if (canvas.width !== w || canvas.height !== h) {
-      canvas.width = w;
-      canvas.height = h;
+      canvas.width = w; canvas.height = h;
       gl.viewport(0, 0, w, h);
     }
   }
@@ -364,7 +786,7 @@
   function render() {
     resize();
     flushPending();
-    gl.clearColor(0, 0, 0, 1);
+    gl.clearColor(0.04, 0.04, 0.043, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(program);
     gl.activeTexture(gl.TEXTURE0);
@@ -397,58 +819,112 @@
   }
   requestAnimationFrame(frame);
 
-  const statsEl = document.getElementById('stats');
+  // --- stats ---
+  const srStat = document.getElementById('srStat');
+  const dspStat = document.getElementById('dspStat');
+  const peakStat = document.getElementById('peakStat');
   function updateStats() {
-    if (!micActive) { statsEl.textContent = ''; return; }
+    if (!micActive) return;
     const sr = audioCtx.sampleRate;
     const budgetUs = (128 / sr) * 1e6;
-    const pct = (dspUs / budgetUs * 100).toFixed(1);
-    const peakStr = isFinite(peakDb) ? `${peakDb.toFixed(0)} dB` : '−∞';
-    statsEl.textContent =
-      `${sr | 0} Hz · DSP ${dspUs.toFixed(0)} μs/quantum (${pct}% budget) · ` +
-      `peak ${peakStr} · ${LIN_BINS} lin + ${logBinCount} log`;
+    const pct = (dspUs / budgetUs * 100);
+    const peakStr = isFinite(peakDb) ? `${peakDb.toFixed(0)} dB` : '−∞ dB';
+    srStat.textContent = `${(sr/1000).toFixed(0)} kHz`;
+    dspStat.textContent = `${pct.toFixed(0)}% budget`;
+    peakStat.textContent = `peak ${peakStr}`;
   }
 
-  // --- note labels (log view only) ---
-  const notesEl = document.getElementById('notes');
-  function layoutNotes() {
-    notesEl.innerHTML = '';
-    if (view !== 'log') return;
-    for (let midi = LOG_LO_MIDI; midi <= LOG_HI_MIDI; midi++) {
-      if (midi % 12 !== 0) continue;  // C only (octave markers)
-      const octave = Math.floor(midi / 12) - 1;
-      const yFrac = (midi - LOG_LO_MIDI) * LOG_BINS_PER_SEMITONE / logBinCount;
-      const div = document.createElement('div');
-      div.textContent = 'C' + octave;
-      div.style.bottom = `${yFrac * 100}%`;
-      notesEl.appendChild(div);
+  // --- axis labels ---
+  const axisEl = document.getElementById('axisLabels');
+  function layoutAxis() {
+    axisEl.innerHTML = '';
+    if (view === 'log') {
+      for (let midi = LOG_LO_MIDI; midi <= LOG_HI_MIDI; midi++) {
+        if (midi % 12 !== 0) continue;
+        const octave = Math.floor(midi / 12) - 1;
+        const yFrac = (midi - LOG_LO_MIDI) * LOG_BINS_PER_SEMITONE / logBinCount;
+        const div = document.createElement('div');
+        div.textContent = 'C' + octave;
+        div.style.bottom = `${yFrac * 100}%`;
+        axisEl.appendChild(div);
+      }
+    } else {
+      for (const hz of HZ_LABELS) {
+        if (hz < LIN_LO_HZ || hz > LIN_HI_HZ) continue;
+        const yFrac = (hz - LIN_LO_HZ) / (LIN_HI_HZ - LIN_LO_HZ);
+        const div = document.createElement('div');
+        div.textContent = hz >= 1000 ? `${hz / 1000}k` : `${hz}`;
+        div.style.bottom = `${yFrac * 100}%`;
+        axisEl.appendChild(div);
+      }
     }
   }
-  layoutNotes();
+  layoutAxis();
 
   // --- controls ---
-  document.getElementById('view').addEventListener('change', (e) => {
-    view = e.target.value;
-    layoutNotes();
+  const viewSeg = document.getElementById('viewSeg');
+  const viewStat = document.getElementById('viewStat');
+  function setView(v) {
+    view = v;
+    for (const b of viewSeg.querySelectorAll('.seg-btn')) {
+      const active = b.dataset.view === v;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-pressed', String(active));
+    }
+    viewStat.textContent = v === 'log' ? 'log' : 'linear';
+    layoutAxis();
+  }
+  viewSeg.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (btn) setView(btn.dataset.view);
   });
   document.getElementById('cmap').addEventListener('change', (e) => setColormap(e.target.value));
 
   const floorEl = document.getElementById('floor');
   const floorV = document.getElementById('floorV');
-  floorEl.addEventListener('input', () => { floorDb = +floorEl.value; floorV.textContent = floorDb; });
+  floorEl.addEventListener('input', () => {
+    floorDb = +floorEl.value;
+    floorV.textContent = `${floorDb} dB`.replace('-', '−');
+  });
   const rangeEl = document.getElementById('range');
   const rangeV = document.getElementById('rangeV');
-  rangeEl.addEventListener('input', () => { rangeDb = +rangeEl.value; rangeV.textContent = rangeDb; });
-
-  const pauseHint = document.getElementById('pauseHint');
-  document.addEventListener('keydown', (e) => {
-    if (e.code === 'Space') {
-      e.preventDefault();
-      paused = !paused;
-      pauseHint.classList.toggle('show', paused);
-    }
+  rangeEl.addEventListener('input', () => {
+    rangeDb = +rangeEl.value;
+    rangeV.textContent = `${rangeDb} dB`;
   });
 
+  // --- pause (spacebar + tap canvas + sidebar button) ---
+  const liveStat = document.getElementById('liveStat');
+  const pauseToggle = document.getElementById('pauseToggle');
+  const pauseLabel = document.getElementById('pauseLabel');
+  function togglePause() {
+    if (!micActive) return;
+    paused = !paused;
+    document.body.classList.toggle('paused', paused);
+    liveStat.textContent = paused ? 'paused' : 'live';
+    pauseLabel.textContent = paused ? 'Play' : 'Pause';
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !e.target.matches('input, select, button, textarea')) {
+      e.preventDefault();
+      togglePause();
+    }
+  });
+  canvas.addEventListener('click', togglePause);
+  pauseToggle.addEventListener('click', togglePause);
+
+  // --- sidebar toggle ---
+  const sidebar = document.getElementById('sidebar');
+  function setSidebar(open) {
+    document.body.classList.toggle('sidebar-open', open);
+    sidebar.setAttribute('aria-hidden', String(!open));
+  }
+  document.getElementById('settingsBtn').addEventListener('click', () => {
+    setSidebar(!document.body.classList.contains('sidebar-open'));
+  });
+  document.getElementById('closeBtn').addEventListener('click', () => setSidebar(false));
+
+  // --- export ---
   document.getElementById('exportBtn').addEventListener('click', () => {
     canvas.toBlob((blob) => {
       const a = document.createElement('a');
