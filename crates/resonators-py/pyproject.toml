@@ -5,18 +5,30 @@ build-backend = "maturin"
 [project]
 name = "resonators"
 version = "0.1.0"
-description = "Real-time complex phasor demodulation resonator bank"
+description = "Rust implementation of the Resonate algorithm for low-latency spectral analysis."
+readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["numpy"]
+authors = [{ name = "John Hartquist", email = "john@hartquist.com" }]
+dependencies = ["numpy>=1.22"]
 license = { text = "MIT OR Apache-2.0" }
+keywords = ["audio", "dsp", "spectral-analysis", "real-time", "resonate"]
 classifiers = [
     "Programming Language :: Rust",
+    "Programming Language :: Python",
     "Programming Language :: Python :: Implementation :: CPython",
     "License :: OSI Approved :: MIT License",
     "License :: OSI Approved :: Apache Software License",
     "Topic :: Multimedia :: Sound/Audio :: Analysis",
     "Topic :: Scientific/Engineering",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jhartquist/resonators"
+Repository = "https://github.com/jhartquist/resonators"
+Documentation = "https://github.com/jhartquist/resonators"
 
 [tool.maturin]
 module-name = "resonators"
