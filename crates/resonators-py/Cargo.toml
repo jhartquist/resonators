@@ -12,6 +12,7 @@ homepage.workspace = true
 [lib]
 name = "resonators"
 crate-type = ["cdylib"]
+doc = false
 
 [dependencies]
 resonators = { path = "../resonators" }

@@ -3,7 +3,13 @@ fixtures:
 
 # Rust
 test:
-    cargo test
+    cargo test --workspace
+
+fmt-check:
+    cargo fmt --all --check
+
+clippy:
+    cargo clippy --workspace --all-targets -- -D warnings
 
 bench:
     cargo bench --bench bank
@@ -25,7 +31,8 @@ py-test: py-build
 # WASM bindings (requires wasm-pack)
 wasm-build:
     cd crates/resonators-wasm && wasm-pack build --target web --release --out-name resonators
-    sed -i '' 's/"resonators-wasm"/"resonators"/' crates/resonators-wasm/pkg/package.json
+    sed -i.bak 's/"resonators-wasm"/"resonators"/' crates/resonators-wasm/pkg/package.json
+    rm crates/resonators-wasm/pkg/package.json.bak
 
 # In-browser perf benchmark page (open http://localhost:8000)
 wasm-bench: wasm-build
@@ -40,4 +47,4 @@ wasm-spectrogram: wasm-build
     cd examples/web-spectrogram && python3 -m http.server 8000
 
 # Everything
-ci: test py-test
+ci: fmt-check clippy test py-test wasm-build
