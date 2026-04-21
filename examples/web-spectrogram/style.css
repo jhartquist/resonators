@@ -297,9 +297,12 @@ body.paused #pauseToggle .ic-play { display: block; }
 }
 .landing-card p {
   color: var(--muted);
-  margin: 0 0 32px;
+  margin: 0 0 18px;
   line-height: 1.65;
   font-size: 14px;
+}
+.landing-card p:last-of-type {
+  margin-bottom: 32px;
 }
 .landing-card p a {
   color: var(--text);
