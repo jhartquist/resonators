@@ -1,0 +1,72 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - name: Build wasm
+        run: just wasm-build
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp -R examples/web-bench _site/bench
+          cp -R examples/web-spectrogram _site/spectrogram
+          cp -R crates/resonators-wasm/pkg _site/bench/pkg
+          cp -R crates/resonators-wasm/pkg _site/spectrogram/pkg
+          cat > _site/index.html <<'EOF'
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>resonators demos</title>
+            <style>
+              body { font-family: system-ui, sans-serif; max-width: 40em; margin: 3em auto; padding: 0 1em; line-height: 1.5; }
+              h1 { margin-bottom: 0.5em; }
+              ul { line-height: 2; }
+            </style>
+          </head>
+          <body>
+            <h1>resonators</h1>
+            <p>
+              In-browser demos for
+              <a href="https://github.com/jhartquist/resonators">resonators</a>,
+              a Rust implementation of the Resonate algorithm for low-latency spectral analysis.
+            </p>
+            <ul>
+              <li><a href="./spectrogram/">Live mic spectrogram</a></li>
+              <li><a href="./bench/">In-browser benchmark</a></li>
+            </ul>
+          </body>
+          </html>
+          EOF
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
