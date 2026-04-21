@@ -1,11 +1,11 @@
 /// Parameters for a single resonator.
 ///
 /// - `freq`: resonant frequency, in Hz.
-/// - `alpha`: coefficient of the resonator's EWMA. Smaller `alpha` means a
-///   longer time constant.
-/// - `beta`: coefficient of a second EWMA applied to the resonator's output,
-///   typically set equal to `alpha`. Smaller `beta` gives a smoother output
-///   at the cost of additional latency.
+/// - `alpha`: EWMA coefficient in `(0, 1]`. Smaller `alpha` means a longer
+///   time constant; `1.0` is no smoothing.
+/// - `beta`: coefficient of a second EWMA on the resonator's output, in
+///   `(0, 1]`. Typically equal to `alpha`; smaller `beta` gives a smoother
+///   output at the cost of additional latency.
 ///
 /// See [`heuristic_alpha`](crate::heuristic_alpha) for a reasonable
 /// per-frequency default.
