@@ -35,7 +35,7 @@ It's based on Alexandre's reference implementation, [noFFT][nofft], which is wri
 
 ## Demo
 
-![resonator bank spectrogram of a live audio stream](images/spectrogram-demo.png)
+![resonator bank spectrogram of a live audio stream](images/spectrograms.png)
 
 Live in the browser:
 
