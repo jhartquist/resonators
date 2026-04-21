@@ -385,22 +385,32 @@ body:not(.mic-on) .corner,
 body:not(.mic-on) .axis-labels { visibility: hidden; }
 body:not(.mic-on) .statusbar { display: none; }
 
-/* Mobile sidebar = full-screen overlay */
+/* Mobile sidebar = bottom sheet, leaves spectrum visible above */
 @media (max-width: 600px) {
   .sidebar {
     position: fixed;
-    inset: 0;
-    width: 100%;
-    transform: translateX(100%);
-    transition: transform 220ms cubic-bezier(.2,.8,.2,1);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 55vh;
+    transform: translateY(100%);
+    transition: transform 240ms cubic-bezier(.2,.8,.2,1);
     border-left: none;
+    border-top: 1px solid var(--border);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
     z-index: 100;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.4);
   }
   body.sidebar-open .sidebar {
-    transform: translateX(0);
-    width: 100%;
+    transform: translateY(0);
+    width: auto;
   }
-  .sidebar-inner { width: 100%; }
-  /* Don't push canvas on mobile (overlay instead) */
-  body.sidebar-open .stage { /* unchanged */ }
+  .sidebar-inner {
+    width: auto;
+    height: auto;
+    max-height: 55vh;
+    padding: 20px 22px 24px;
+  }
 }
