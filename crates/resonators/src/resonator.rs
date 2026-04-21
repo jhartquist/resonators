@@ -89,9 +89,9 @@ impl Resonator {
     }
 
     fn stabilize(&mut self) {
-        let mag = (self.z_re * self.z_re + self.z_im * self.z_im).sqrt();
-        self.z_re /= mag;
-        self.z_im /= mag;
+        let inv_mag = 1.0 / (self.z_re * self.z_re + self.z_im * self.z_im).sqrt();
+        self.z_re *= inv_mag;
+        self.z_im *= inv_mag;
     }
 
     /// Clears all accumulated state. Frequency and time constants are
