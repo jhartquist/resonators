@@ -2,7 +2,7 @@ use resonators::{ResonatorBank, ResonatorConfig, heuristic_alpha, midi_to_hz};
 use std::f32::consts::PI;
 
 const SAMPLE_RATE: f32 = 44100.0;
-const CHUNK_SIZE: usize = 256;
+const HOP_SIZE: usize = 256;
 
 fn main() {
     // 88 MIDI piano bins, A0 to C8
@@ -27,7 +27,7 @@ fn main() {
         .collect();
 
     // feed chunks as if they were arriving from a live stream
-    for (frame, chunk) in signal.chunks(CHUNK_SIZE).enumerate() {
+    for (frame, chunk) in signal.chunks(HOP_SIZE).enumerate() {
         bank.process_samples(chunk);
 
         // read the bank's state after each chunk: find the peak bin
