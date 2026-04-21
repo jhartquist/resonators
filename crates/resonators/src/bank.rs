@@ -288,12 +288,11 @@ mod tests {
 
         // streaming equivalent
         let mut bank2 = ResonatorBank::new(&configs, sr);
-        let n_frames = signal.len() / hop;
         let mut streamed = Vec::with_capacity(batch.len());
-        for frame in 0..n_frames {
-            bank2.process_samples(&signal[frame * hop..(frame + 1) * hop]);
-            for (&r, &i) in bank2.rr_re.iter().zip(&bank2.rr_im) {
-                streamed.push(Complex32::new(r, i));
+        for chunk in signal.chunks_exact(hop) {
+            bank2.process_samples(chunk);
+            for i in 0..bank2.len() {
+                streamed.push(bank2.complex(i));
             }
         }
         assert_eq!(batch, streamed);
