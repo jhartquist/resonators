@@ -7,7 +7,7 @@ A Rust implementation of Alexandre François's [Resonate algorithm][paper] for l
 [![npm](https://img.shields.io/npm/v/resonators.svg)](https://www.npmjs.com/package/resonators)
 [![docs.rs](https://img.shields.io/docsrs/resonators.svg)](https://docs.rs/resonators)
 [![CI](https://github.com/jhartquist/resonators/actions/workflows/ci.yml/badge.svg)](https://github.com/jhartquist/resonators/actions/workflows/ci.yml)
-[![License](https://img.shields.io/crates/l/resonators.svg)](#license)
+[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 [resonate]: https://alexandrefrancois.org/Resonate/
 [paper]: https://alexandrefrancois.org/assets/publications/FrancoisARJ-ICMC2025.pdf
