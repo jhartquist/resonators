@@ -55,7 +55,7 @@ def plot_panel(ax, spec: np.ndarray, freqs: np.ndarray, title: str, show_ylabel:
 
 
 def main():
-    # Load a librosa sample (trumpet — has clean harmonics)
+    # Load librosa's trumpet sample (clean harmonics)
     signal, _ = librosa.load(librosa.ex("trumpet"), sr=SAMPLE_RATE, mono=True)
     signal = signal.astype(np.float32)
 
