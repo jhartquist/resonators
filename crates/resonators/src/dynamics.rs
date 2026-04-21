@@ -26,6 +26,25 @@ pub fn tau_from_alpha(alpha: f32, sample_rate: f32) -> f32 {
     -dt / (1.0 - alpha).ln()
 }
 
+/// EWMA coefficient for smoothing `R` (output) with time constant `tau`.
+///
+/// Used in the self-tuning resonator (François 2026 extension): `R̃ ← (1−β)R̃ + β·R`
+/// applied after the main `α`-accumulation. Shape matches [`alpha_from_tau`].
+pub fn beta_from_tau(tau: f32, sample_rate: f32) -> f32 {
+    let dt = 1.0 / sample_rate;
+    1.0 - (-dt / tau).exp()
+}
+
+/// EWMA coefficient for the frequency-tracking update with time constant `tau`.
+///
+/// Used in the self-tuning resonator (François 2026 extension):
+/// `ω ← ω + γ·(ω_obs − ω)` where `ω_obs = arg(R̃·conj(R̃_prev))/Δt`.
+/// Small γ (long τ_γ) = slow, stable tracking; large γ = aggressive slew.
+pub fn gamma_from_tau(tau: f32, sample_rate: f32) -> f32 {
+    let dt = 1.0 / sample_rate;
+    1.0 - (-dt / tau).exp()
+}
+
 /// Compute the phasor rotation angle for a given frequency and sample rate.
 ///
 /// Returns `-2π * frequency / sample_rate`.

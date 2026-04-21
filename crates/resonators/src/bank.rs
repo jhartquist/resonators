@@ -82,8 +82,10 @@ impl ResonatorBank {
     pub fn update_sample(&mut self, sample: f32) {
         for k in 0..self.num {
             // EWMA accumulation: R = (1-α)*R + α*x*Z
-            self.r_re[k] = self.om_alphas[k] * self.r_re[k] + self.alphas[k] * sample * self.z_re[k];
-            self.r_im[k] = self.om_alphas[k] * self.r_im[k] + self.alphas[k] * sample * self.z_im[k];
+            self.r_re[k] =
+                self.om_alphas[k] * self.r_re[k] + self.alphas[k] * sample * self.z_re[k];
+            self.r_im[k] =
+                self.om_alphas[k] * self.r_im[k] + self.alphas[k] * sample * self.z_im[k];
 
             // Output smoothing: R̃ = (1-β)*R̃ + β*R
             self.rr_re[k] = self.om_betas[k] * self.rr_re[k] + self.betas[k] * self.r_re[k];

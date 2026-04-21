@@ -25,7 +25,9 @@ pub fn log_spaced(fmin: f32, n_bins: usize, bins_per_octave: usize) -> Vec<f32> 
 ///
 /// MIDI notes 21..=108 at the given tuning reference.
 pub fn midi_piano(tuning: f32) -> Vec<f32> {
-    (21..=108).map(|midi| midi_to_hz(midi as f32, tuning)).collect()
+    (21..=108)
+        .map(|midi| midi_to_hz(midi as f32, tuning))
+        .collect()
 }
 
 /// Generate linearly-spaced frequencies (STFT-style).
