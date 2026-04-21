@@ -1,5 +1,8 @@
 /target
 
+# macOS
+.DS_Store
+
 # Python
 .venv/
 __pycache__/
