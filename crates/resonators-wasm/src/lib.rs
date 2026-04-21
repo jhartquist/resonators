@@ -45,6 +45,13 @@ impl ResonatorBank {
         self.inner.process_samples(samples);
     }
 
+    /// Runs the bank over `signal` and returns a spectrogram-like output.
+    ///
+    /// The returned `Float32Array` is frame-major with complex values
+    /// interleaved: `[re_0_0, im_0_0, re_0_1, im_0_1, ..., re_F_B, im_F_B]`,
+    /// where `F = Math.floor(signal.length / hop)` is the number of frames
+    /// and `B = bank.length` is the number of bins. Total length is
+    /// `F * B * 2`. Trailing samples (fewer than `hop`) are dropped.
     pub fn resonate(&mut self, signal: &[f32], hop: usize) -> Box<[f32]> {
         let frames = self.inner.resonate(signal, hop);
         let mut out = Vec::with_capacity(frames.len() * 2);
