@@ -385,7 +385,7 @@ body:not(.mic-on) .corner,
 body:not(.mic-on) .axis-labels { visibility: hidden; }
 body:not(.mic-on) .statusbar { display: none; }
 
-/* Mobile sidebar = bottom sheet, leaves spectrum visible above */
+/* Mobile sidebar = bottom sheet, sizes to content, leaves spectrum visible above */
 @media (max-width: 600px) {
   .sidebar {
     position: fixed;
@@ -393,7 +393,7 @@ body:not(.mic-on) .statusbar { display: none; }
     right: 0;
     bottom: 0;
     width: auto;
-    max-height: 55dvh;
+    max-height: 85dvh;
     transform: translateY(100%);
     transition: transform 240ms cubic-bezier(.2,.8,.2,1);
     border-left: none;
@@ -410,7 +410,7 @@ body:not(.mic-on) .statusbar { display: none; }
   .sidebar-inner {
     width: auto;
     height: auto;
-    max-height: 55dvh;
+    max-height: 85dvh;
     padding: 20px 22px 24px;
   }
 }
