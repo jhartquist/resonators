@@ -35,9 +35,9 @@ It's based on Alexandre's reference implementation, [noFFT][nofft], which is wri
 
 ## Demo
 
-![resonator bank spectrograms of a trumpet sample with linear and log frequency axes](images/spectrograms.png)
+![live spectrogram demo screenshot](images/spectrogram-demo.png)
 
-*Trumpet sample from [librosa](https://librosa.org); linear and log frequency axes.*
+*[Try it in your browser](https://jhartquist.github.io/resonators/spectrogram/).*
 
 Live in the browser:
 
