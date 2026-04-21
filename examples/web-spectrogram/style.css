@@ -385,23 +385,24 @@ body:not(.mic-on) .corner,
 body:not(.mic-on) .axis-labels { visibility: hidden; }
 body:not(.mic-on) .statusbar { display: none; }
 
-/* Mobile sidebar = bottom sheet, sizes to content, leaves spectrum visible above */
+/* Mobile sidebar = top sheet, sizes to content, leaves low frequencies visible below */
 @media (max-width: 600px) {
   .sidebar {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
+    top: 0;
+    bottom: auto;
     width: auto;
     max-height: 85dvh;
-    transform: translateY(100%);
+    transform: translateY(-100%);
     transition: transform 240ms cubic-bezier(.2,.8,.2,1);
     border-left: none;
-    border-top: 1px solid var(--border);
-    border-top-left-radius: 14px;
-    border-top-right-radius: 14px;
+    border-bottom: 1px solid var(--border);
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
     z-index: 100;
-    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
   }
   body.sidebar-open .sidebar {
     transform: translateY(0);
