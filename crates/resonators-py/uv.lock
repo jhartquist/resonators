@@ -220,4 +220,4 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "numpy" }]
+requires-dist = [{ name = "numpy", specifier = ">=1.22" }]
