@@ -37,10 +37,10 @@ It's based on Alexandre's reference implementation, [noFFT][nofft], which is wri
 
 ![resonator bank spectrogram of a live audio stream](images/spectrogram-demo.png)
 
-Live in the browser *(URLs TBD; hosted once examples are merged)*:
+Live in the browser:
 
-- **Spectrogram**: feed your mic through a resonator bank in real time
-- **Benchmark**: run the WASM bank in your browser
+- [**Spectrogram**](https://jhartquist.github.io/resonators/spectrogram/): feed your mic through a resonator bank in real time
+- [**Benchmark**](https://jhartquist.github.io/resonators/bench/): run the WASM bank in your browser
 
 ## Install
 
