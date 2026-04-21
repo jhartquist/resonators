@@ -707,6 +707,8 @@
   let audioCtx = null, workletNode = null, micStream = null, micActive = false;
 
   async function startMic() {
+    if (micActive) return;
+    document.activeElement?.blur();
     document.getElementById('landingNote').innerHTML = 'requesting microphone access…';
     try {
       audioCtx = new AudioContext();
