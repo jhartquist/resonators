@@ -19,6 +19,7 @@ SR = 44100
 HOP = 256
 N_SECONDS = 5
 BIN_COUNTS = [88, 264, 440, 880]
+WARMUPS = 3
 RUNS = 5
 
 
@@ -42,7 +43,8 @@ def time_resonators(freqs, alphas, signal):
         bank.reset()
         return bank.resonate(signal, HOP)
 
-    run()  # warmup
+    for _ in range(WARMUPS):
+        run()
     times = []
     for _ in range(RUNS):
         t0 = perf_counter()
@@ -55,7 +57,8 @@ def time_nofft(freqs, alphas, signal):
     def run():
         return noFFT.resonate(signal, SR, freqs, alphas, alphas, HOP)
 
-    run()  # warmup
+    for _ in range(WARMUPS):
+        run()
     times = []
     for _ in range(RUNS):
         t0 = perf_counter()
