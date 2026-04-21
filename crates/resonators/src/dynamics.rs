@@ -5,6 +5,11 @@
 ///
 /// [paper]: https://alexandrefrancois.org/assets/publications/FrancoisARJ-ICMC2025.pdf
 pub fn heuristic_alpha(freq: f32, sample_rate: f32) -> f32 {
+    debug_assert!(freq.is_finite() && freq > 0.0, "freq must be positive");
+    debug_assert!(
+        sample_rate.is_finite() && sample_rate > 0.0,
+        "sample_rate must be positive"
+    );
     let dt = 1.0 / sample_rate;
     1.0 - (-dt * freq / (1.0 + freq).log10()).exp()
 }

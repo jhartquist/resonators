@@ -19,6 +19,15 @@ pub struct ResonatorConfig {
 impl ResonatorConfig {
     /// Creates a new config with the given frequency, alpha, and beta.
     pub fn new(freq: f32, alpha: f32, beta: f32) -> Self {
+        debug_assert!(freq.is_finite() && freq > 0.0, "freq must be positive");
+        debug_assert!(
+            alpha.is_finite() && alpha > 0.0 && alpha <= 1.0,
+            "alpha must be in (0, 1]"
+        );
+        debug_assert!(
+            beta.is_finite() && beta > 0.0 && beta <= 1.0,
+            "beta must be in (0, 1]"
+        );
         Self { freq, alpha, beta }
     }
 }

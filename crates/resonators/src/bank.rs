@@ -62,6 +62,10 @@ impl ResonatorBank {
     /// Creates a new bank with one resonator per config, all sharing the
     /// given sample rate.
     pub fn new(configs: &[ResonatorConfig], sample_rate: f32) -> Self {
+        debug_assert!(
+            sample_rate.is_finite() && sample_rate > 0.0,
+            "sample_rate must be positive"
+        );
         let n_resonators = configs.len();
 
         let mut frequencies = Vec::with_capacity(n_resonators);

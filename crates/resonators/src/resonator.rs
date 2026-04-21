@@ -38,6 +38,10 @@ pub struct Resonator {
 impl Resonator {
     /// Creates a new resonator from the given config and sample rate.
     pub fn new(config: ResonatorConfig, sample_rate: f32) -> Self {
+        debug_assert!(
+            sample_rate.is_finite() && sample_rate > 0.0,
+            "sample_rate must be positive"
+        );
         let ResonatorConfig { freq, alpha, beta } = config;
         let phasor_angle = -2.0 * PI * freq / sample_rate;
         Self {
