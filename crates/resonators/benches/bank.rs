@@ -37,8 +37,9 @@ fn bench_bank(c: &mut Criterion) {
             BenchmarkId::from_parameter(n_bins),
             &configs,
             |bencher, configs| {
+                let mut bank = ResonatorBank::new(configs, SAMPLE_RATE);
                 bencher.iter(|| {
-                    let mut bank = ResonatorBank::new(configs, SAMPLE_RATE);
+                    bank.reset();
                     for &sample in &signal {
                         bank.process_sample(black_box(sample));
                     }
