@@ -357,6 +357,7 @@ body.paused #pauseToggle .ic-play { display: block; }
   gap: 22px;
   font-variant-numeric: tabular-nums;
 }
+.statusbar .stats > span { white-space: nowrap; }
 .statusbar .live {
   color: var(--muted);
 }
@@ -413,5 +414,13 @@ body:not(.mic-on) .statusbar { display: none; }
     height: auto;
     max-height: 85dvh;
     padding: 20px 22px 24px;
+  }
+
+  .statusbar { padding: 0 12px; font-size: 11px; }
+  .statusbar .brand { display: none; }
+  .statusbar .stats {
+    gap: 14px;
+    flex: 1;
+    justify-content: space-between;
   }
 }
