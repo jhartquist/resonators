@@ -314,6 +314,41 @@ mod tests {
     }
 
     #[test]
+    fn single_bin_bank_matches_scalar_resonator() {
+        // Bank uses mul_add in the hot loop; Resonator uses separate mul + add.
+        // Results agree to within f32 rounding, not bit-for-bit.
+        use crate::Resonator;
+
+        let sr = 44100.0;
+        let freq = 440.0;
+        let alpha = heuristic_alpha(freq, sr);
+        let config = ResonatorConfig::new(freq, alpha, alpha);
+        let signal: Vec<f32> = (0..2000)
+            .map(|i| (2.0 * PI * freq * i as f32 / sr).cos())
+            .collect();
+
+        let mut r = Resonator::new(config, sr);
+        r.process_samples(&signal);
+        let mut bank = ResonatorBank::new(&[config], sr);
+        bank.process_samples(&signal);
+
+        let rc = r.complex();
+        let bc = bank.complex(0);
+        assert!(
+            (rc.re - bc.re).abs() < 1e-5,
+            "re drift: scalar={} bank={}",
+            rc.re,
+            bc.re
+        );
+        assert!(
+            (rc.im - bc.im).abs() < 1e-5,
+            "im drift: scalar={} bank={}",
+            rc.im,
+            bc.im
+        );
+    }
+
+    #[test]
     fn resonate_empty_signal() {
         let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
         let mut bank = ResonatorBank::new(&configs, 44100.0);
