@@ -32,23 +32,19 @@
             <div class="brand-mark">resonators</div>
             <h1>live spectrogram</h1>
             <p>
-              Whistle, hum, sing, or play a note — you'll see it appear
-              as a streak of color moving across a real-time spectrogram.
-              440 resonators span the full piano range, with fine enough
-              resolution to pick out individual pitches. Runs entirely
-              in your browser.
+              Whistle, hum, sing, or play a note — you'll see it track
+              across a real-time spectrogram. 440 resonators spaced 5 per
+              semitone from A0 to C8, updated every sample. A Rust + WebGL
+              demo of the
+              <a href="https://github.com/jhartquist/resonators" target="_blank" rel="noopener">resonators</a>
+              crate, an implementation of the
+              <a href="https://alexandrefrancois.org/Resonate/" target="_blank" rel="noopener">Resonate algorithm</a>
+              by Alexandre François.
             </p>
             <button class="start-btn" id="startBtn" type="button">Start microphone</button>
             <div class="footnote" id="landingNote">
               <div>requires microphone access</div>
               <div>spacebar or tap canvas to pause once running</div>
-            </div>
-            <div class="landing-credit">
-              Built with Rust + WebGL · a live demo of
-              <a href="https://github.com/jhartquist/resonators" target="_blank" rel="noopener">resonators</a>,
-              an implementation of the
-              <a href="https://alexandrefrancois.org/Resonate/" target="_blank" rel="noopener">Resonate algorithm</a>
-              by Alexandre François
             </div>
           </div>
         </div>

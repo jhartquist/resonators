@@ -301,6 +301,16 @@ body.paused #pauseToggle .ic-play { display: block; }
   line-height: 1.65;
   font-size: 14px;
 }
+.landing-card p a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--dim);
+  text-underline-offset: 3px;
+}
+.landing-card p a:hover {
+  text-decoration-color: var(--muted);
+}
 .start-btn {
   font: inherit;
   font-size: 14px;
@@ -328,22 +338,6 @@ body.paused #pauseToggle .ic-play { display: block; }
 }
 .landing-card .footnote .err {
   color: #d96f6f;
-}
-.landing-credit {
-  margin-top: 22px;
-  font-size: 11px;
-  color: var(--dim);
-  letter-spacing: 0.04em;
-  line-height: 1.7;
-}
-.landing-credit a {
-  color: var(--muted);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-}
-.landing-credit a:hover {
-  color: var(--text);
 }
 
 /* Status bar */
