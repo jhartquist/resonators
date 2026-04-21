@@ -10,6 +10,7 @@ use crate::config::ResonatorConfig;
 /// For most applications, prefer [`ResonatorBank`](crate::ResonatorBank),
 /// which processes many resonators together. `Resonator` is useful for
 /// single-bin analysis or composing custom bank-like structures.
+#[derive(Debug)]
 pub struct Resonator {
     freq: f32,
     alpha: f32,

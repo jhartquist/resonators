@@ -16,6 +16,7 @@ use crate::dynamics::heuristic_alphas;
 /// magnitudes, powers, phases, or complex values at any time. For one-shot
 /// processing of a full signal into a spectrogram-like output, use
 /// [`resonate`](ResonatorBank::resonate).
+#[derive(Debug)]
 pub struct ResonatorBank {
     n_resonators: usize,
     frequencies: Vec<f32>,
