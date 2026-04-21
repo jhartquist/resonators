@@ -57,6 +57,7 @@ impl Resonator {
     }
 
     /// Updates the resonator with a single input sample.
+    #[inline]
     pub fn process_sample(&mut self, sample: f32) {
         // update raw output via EWMA
         self.r_re = (1.0 - self.alpha) * self.r_re + self.alpha * sample * self.z_re;
