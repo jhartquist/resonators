@@ -268,7 +268,7 @@ body.paused #pauseToggle .ic-play { display: block; }
 }
 .landing-card {
   text-align: center;
-  max-width: 460px;
+  max-width: 560px;
   padding: 0 28px;
 }
 .landing-card .brand-mark {
