@@ -40,7 +40,7 @@ def test_heuristic_alphas_matches_scalar():
 
 
 def test_bank_default_alphas():
-    # no alphas provided — uses heuristic_alphas internally
+    # no alphas kwarg, uses heuristic_alphas internally
     freqs = np.array([220.0, 440.0, 880.0], dtype=np.float32)
     bank = ResonatorBank(freqs, SAMPLE_RATE)
     assert len(bank) == 3
