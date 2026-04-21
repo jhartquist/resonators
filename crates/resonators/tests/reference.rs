@@ -8,8 +8,9 @@ const TOLERANCE: f32 = 1e-3;
 struct Fixture {
     signal: Vec<f32>,
     configs: Vec<ResonatorConfig>,
-    ref_re: Vec<Vec<f32>>, // [frame][bin]
-    ref_im: Vec<Vec<f32>>,
+    // frame-major, indexed as [frame * n_bins + bin]
+    ref_re: Vec<f32>,
+    ref_im: Vec<f32>,
     n_frames: usize,
     n_bins: usize,
 }
@@ -29,12 +30,12 @@ impl Fixture {
         let n_frames = shape[0] as usize;
         let n_bins = shape[2] as usize;
 
-        let mut ref_re = vec![vec![0.0; n_bins]; n_frames];
-        let mut ref_im = vec![vec![0.0; n_bins]; n_frames];
+        let mut ref_re = vec![0.0f32; n_frames * n_bins];
+        let mut ref_im = vec![0.0f32; n_frames * n_bins];
         for f in 0..n_frames {
             for b in 0..n_bins {
-                ref_re[f][b] = flat[f * 2 * n_bins + b];
-                ref_im[f][b] = flat[f * 2 * n_bins + n_bins + b];
+                ref_re[f * n_bins + b] = flat[f * 2 * n_bins + b];
+                ref_im[f * n_bins + b] = flat[f * 2 * n_bins + n_bins + b];
             }
         }
 
@@ -66,16 +67,18 @@ fn bank_matches_reference() {
 
         for bin in 0..fx.n_bins {
             let c = bank.complex(bin);
-            let (re, im) = (c.re, c.im);
+            let idx = frame * fx.n_bins + bin;
             assert!(
-                (re - fx.ref_re[frame][bin]).abs() < TOLERANCE,
-                "frame {frame} bin {bin} re: {re} vs {}",
-                fx.ref_re[frame][bin]
+                (c.re - fx.ref_re[idx]).abs() < TOLERANCE,
+                "frame {frame} bin {bin} re: {} vs {}",
+                c.re,
+                fx.ref_re[idx]
             );
             assert!(
-                (im - fx.ref_im[frame][bin]).abs() < TOLERANCE,
-                "frame {frame} bin {bin} im: {im} vs {}",
-                fx.ref_im[frame][bin]
+                (c.im - fx.ref_im[idx]).abs() < TOLERANCE,
+                "frame {frame} bin {bin} im: {} vs {}",
+                c.im,
+                fx.ref_im[idx]
             );
         }
     }
@@ -91,16 +94,18 @@ fn resonator_matches_reference() {
             let start = frame * HOP_SIZE;
             r.process_samples(&fx.signal[start..start + HOP_SIZE]);
             let c = r.complex();
-            let (re, im) = (c.re, c.im);
+            let idx = frame * fx.n_bins + bin;
             assert!(
-                (re - fx.ref_re[frame][bin]).abs() < TOLERANCE,
-                "frame {frame} bin {bin} re: {re} vs {}",
-                fx.ref_re[frame][bin]
+                (c.re - fx.ref_re[idx]).abs() < TOLERANCE,
+                "frame {frame} bin {bin} re: {} vs {}",
+                c.re,
+                fx.ref_re[idx]
             );
             assert!(
-                (im - fx.ref_im[frame][bin]).abs() < TOLERANCE,
-                "frame {frame} bin {bin} im: {im} vs {}",
-                fx.ref_im[frame][bin]
+                (c.im - fx.ref_im[idx]).abs() < TOLERANCE,
+                "frame {frame} bin {bin} im: {} vs {}",
+                c.im,
+                fx.ref_im[idx]
             );
         }
     }
