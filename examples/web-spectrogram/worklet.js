@@ -26,44 +26,34 @@ function scaleAlphas(freqs, sr, scale) {
 class ResonatorsProcessor extends AudioWorkletProcessor {
   constructor({ processorOptions }) {
     super();
-    this.linBank = null;
-    this.logBank = null;
+    this.bank = null;
     this.totalDspMs = 0;
     this.frameCount = 0;
 
     init({ module_or_path: processorOptions.wasmModule }).then(() => {
       const sr = processorOptions.sampleRate;
       const tauScale = processorOptions.tauScale ?? 1.0;
-      const linAlphas = scaleAlphas(processorOptions.linFreqs, sr, tauScale);
-      const logAlphas = scaleAlphas(processorOptions.logFreqs, sr, tauScale);
-      this.linBank = new ResonatorBank(processorOptions.linFreqs, sr, linAlphas);
-      this.logBank = new ResonatorBank(processorOptions.logFreqs, sr, logAlphas);
+      const alphas = scaleAlphas(processorOptions.freqs, sr, tauScale);
+      this.bank = new ResonatorBank(processorOptions.freqs, sr, alphas);
       this.port.postMessage({ ready: true });
     });
   }
 
   process(inputs) {
-    if (!this.linBank) return true;
+    if (!this.bank) return true;
     const input = inputs[0]?.[0];
     if (!input) return true;
 
     const t0 = NOW();
-    this.linBank.process_samples(input);
-    this.logBank.process_samples(input);
+    this.bank.process_samples(input);
     this.totalDspMs += NOW() - t0;
     this.frameCount += 1;
     const dspUs = this.totalDspMs * 1000 / this.frameCount;
 
-    const linMags = this.linBank.magnitudes();
-    const logMags = this.logBank.magnitudes();
-    // Track peak magnitude across both banks for live "Peak: -X dB" stat.
+    const mags = this.bank.magnitudes();
     let peak = 0;
-    for (let i = 0; i < linMags.length; i++) if (linMags[i] > peak) peak = linMags[i];
-    for (let i = 0; i < logMags.length; i++) if (logMags[i] > peak) peak = logMags[i];
-    this.port.postMessage(
-      { linMags, logMags, dspUs, peak },
-      [linMags.buffer, logMags.buffer],
-    );
+    for (let i = 0; i < mags.length; i++) if (mags[i] > peak) peak = mags[i];
+    this.port.postMessage({ mags, dspUs, peak }, [mags.buffer]);
     return true;
   }
 }

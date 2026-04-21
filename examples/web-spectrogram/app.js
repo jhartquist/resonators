@@ -1,27 +1,18 @@
 // --- config ---
 const TEX_COLS = 1024;
-const LOG_BINS_PER_SEMITONE = 5;
-const LOG_LO_MIDI = 21;            // A0
-const LOG_HI_MIDI = 108;           // C8
-const LIN_BINS = 440;
-const LIN_LO_HZ = 30;
-const LIN_HI_HZ = 8000;
+const BINS_PER_SEMITONE = 5;
+const LO_MIDI = 21;            // A0
+const HI_MIDI = 108;           // C8
 const STATS_HZ = 5;
-const HZ_LABELS = [500, 1000, 2000, 4000, 6000, 8000];
+
+const BIN_COUNT = (HI_MIDI - LO_MIDI + 1) * BINS_PER_SEMITONE;
 
 function midiToHz(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
 function logFreqs() {
-  const n = (LOG_HI_MIDI - LOG_LO_MIDI + 1) * LOG_BINS_PER_SEMITONE;
-  const out = new Float32Array(n);
-  for (let i = 0; i < n; i++) out[i] = midiToHz(LOG_LO_MIDI + i / LOG_BINS_PER_SEMITONE);
+  const out = new Float32Array(BIN_COUNT);
+  for (let i = 0; i < BIN_COUNT; i++) out[i] = midiToHz(LO_MIDI + i / BINS_PER_SEMITONE);
   return out;
 }
-function linFreqs() {
-  const out = new Float32Array(LIN_BINS);
-  for (let i = 0; i < LIN_BINS; i++) out[i] = LIN_LO_HZ + (LIN_HI_HZ - LIN_LO_HZ) * i / (LIN_BINS - 1);
-  return out;
-}
-const logBinCount = (LOG_HI_MIDI - LOG_LO_MIDI + 1) * LOG_BINS_PER_SEMITONE;
 
 const COLORMAPS = {
   viridis:   [68,1,84, 64,67,135, 41,120,142, 32,144,140, 68,190,112, 121,209,81, 189,222,38, 253,231,37],
@@ -107,19 +98,14 @@ gl.uniform1i(u.cmap, 1);
 const linearFloat = !!gl.getExtension('OES_texture_float_linear');
 const magFilter = linearFloat ? gl.LINEAR : gl.NEAREST;
 
-function makeMagTex(nBins) {
-  const tex = gl.createTexture();
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, TEX_COLS, nBins, 0, gl.RED, gl.FLOAT, null);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, magFilter);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return tex;
-}
-const linMagTex = makeMagTex(LIN_BINS);
-const logMagTex = makeMagTex(logBinCount);
+const magTex = gl.createTexture();
+gl.activeTexture(gl.TEXTURE0);
+gl.bindTexture(gl.TEXTURE_2D, magTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, TEX_COLS, BIN_COUNT, 0, gl.RED, gl.FLOAT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, magFilter);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
 const cmapTex = gl.createTexture();
 gl.activeTexture(gl.TEXTURE1);
@@ -139,13 +125,11 @@ function setColormap(name) {
 setColormap('magma');
 
 // --- ring buffer state ---
-let linHead = 0, logHead = 0;
-let view = 'log';
+let writeHead = 0;
 let floorDb = -80;
 let rangeDb = 40;
 let paused = false;
-const pendingLin = [];
-const pendingLog = [];
+const pending = [];
 let dspUs = 0;
 let peakDb = -Infinity;
 
@@ -167,19 +151,16 @@ async function startMic() {
       processorOptions: {
         wasmModule,
         sampleRate: audioCtx.sampleRate,
-        linFreqs: linFreqs(),
-        logFreqs: logFreqs(),
+        freqs: logFreqs(),
         tauScale: 2.0,
       },
     });
     workletNode.port.onmessage = (e) => {
       if (e.data.ready) return;
       if (paused) return;
-      const { linMags, logMags, dspUs: us, peak: p } = e.data;
-      pendingLin.push(linMags);
-      pendingLog.push(logMags);
-      if (pendingLin.length > TEX_COLS) pendingLin.splice(0, pendingLin.length - TEX_COLS);
-      if (pendingLog.length > TEX_COLS) pendingLog.splice(0, pendingLog.length - TEX_COLS);
+      const { mags, dspUs: us, peak: p } = e.data;
+      pending.push(mags);
+      if (pending.length > TEX_COLS) pending.splice(0, pending.length - TEX_COLS);
       dspUs = us;
       peakDb = p > 0 ? 20 * Math.log10(p) : -Infinity;
     };
@@ -201,24 +182,14 @@ document.getElementById('startBtn').addEventListener('click', startMic);
 
 // --- texture writes ---
 function flushPending() {
-  if (pendingLin.length) {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, linMagTex);
-    for (const mags of pendingLin) {
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, linHead, 0, 1, mags.length, gl.RED, gl.FLOAT, mags);
-      linHead = (linHead + 1) % TEX_COLS;
-    }
-    pendingLin.length = 0;
+  if (!pending.length) return;
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, magTex);
+  for (const mags of pending) {
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, writeHead, 0, 1, mags.length, gl.RED, gl.FLOAT, mags);
+    writeHead = (writeHead + 1) % TEX_COLS;
   }
-  if (pendingLog.length) {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, logMagTex);
-    for (const mags of pendingLog) {
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, logHead, 0, 1, mags.length, gl.RED, gl.FLOAT, mags);
-      logHead = (logHead + 1) % TEX_COLS;
-    }
-    pendingLog.length = 0;
-  }
+  pending.length = 0;
 }
 
 function resize() {
@@ -238,15 +209,9 @@ function render() {
   gl.clear(gl.COLOR_BUFFER_BIT);
   gl.useProgram(program);
   gl.activeTexture(gl.TEXTURE0);
-  if (view === 'log') {
-    gl.bindTexture(gl.TEXTURE_2D, logMagTex);
-    gl.uniform1i(u.writeHead, logHead);
-    gl.uniform2f(u.texSize, TEX_COLS, logBinCount);
-  } else {
-    gl.bindTexture(gl.TEXTURE_2D, linMagTex);
-    gl.uniform1i(u.writeHead, linHead);
-    gl.uniform2f(u.texSize, TEX_COLS, LIN_BINS);
-  }
+  gl.bindTexture(gl.TEXTURE_2D, magTex);
+  gl.uniform1i(u.writeHead, writeHead);
+  gl.uniform2f(u.texSize, TEX_COLS, BIN_COUNT);
   gl.activeTexture(gl.TEXTURE1);
   gl.bindTexture(gl.TEXTURE_2D, cmapTex);
   gl.uniform1f(u.dbMin, floorDb);
@@ -286,46 +251,19 @@ function updateStats() {
 const axisEl = document.getElementById('axisLabels');
 function layoutAxis() {
   axisEl.innerHTML = '';
-  if (view === 'log') {
-    for (let midi = LOG_LO_MIDI; midi <= LOG_HI_MIDI; midi++) {
-      if (midi % 12 !== 0) continue;
-      const octave = Math.floor(midi / 12) - 1;
-      const yFrac = (midi - LOG_LO_MIDI) * LOG_BINS_PER_SEMITONE / logBinCount;
-      const div = document.createElement('div');
-      div.textContent = 'C' + octave;
-      div.style.bottom = `${yFrac * 100}%`;
-      axisEl.appendChild(div);
-    }
-  } else {
-    for (const hz of HZ_LABELS) {
-      if (hz < LIN_LO_HZ || hz > LIN_HI_HZ) continue;
-      const yFrac = (hz - LIN_LO_HZ) / (LIN_HI_HZ - LIN_LO_HZ);
-      const div = document.createElement('div');
-      div.textContent = hz >= 1000 ? `${hz / 1000}k` : `${hz}`;
-      div.style.bottom = `${yFrac * 100}%`;
-      axisEl.appendChild(div);
-    }
+  for (let midi = LO_MIDI; midi <= HI_MIDI; midi++) {
+    if (midi % 12 !== 0) continue;
+    const octave = Math.floor(midi / 12) - 1;
+    const yFrac = (midi - LO_MIDI) * BINS_PER_SEMITONE / BIN_COUNT;
+    const div = document.createElement('div');
+    div.textContent = 'C' + octave;
+    div.style.bottom = `${yFrac * 100}%`;
+    axisEl.appendChild(div);
   }
 }
 layoutAxis();
 
 // --- controls ---
-const viewSeg = document.getElementById('viewSeg');
-const viewStat = document.getElementById('viewStat');
-function setView(v) {
-  view = v;
-  for (const b of viewSeg.querySelectorAll('.seg-btn')) {
-    const active = b.dataset.view === v;
-    b.classList.toggle('active', active);
-    b.setAttribute('aria-pressed', String(active));
-  }
-  viewStat.textContent = v === 'log' ? 'log' : 'linear';
-  layoutAxis();
-}
-viewSeg.addEventListener('click', (e) => {
-  const btn = e.target.closest('.seg-btn');
-  if (btn) setView(btn.dataset.view);
-});
 document.getElementById('cmap').addEventListener('change', (e) => setColormap(e.target.value));
 
 const floorEl = document.getElementById('floor');

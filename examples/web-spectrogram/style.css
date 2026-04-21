@@ -207,32 +207,6 @@ input[type="range"]:active::-moz-range-thumb { cursor: grabbing; }
 body.paused #pauseToggle .ic-pause { display: none; }
 body.paused #pauseToggle .ic-play { display: block; }
 
-/* Segmented button group */
-.seg {
-  display: flex;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.seg-btn {
-  flex: 1;
-  font: inherit;
-  font-size: 13px;
-  background: transparent;
-  color: var(--muted);
-  border: none;
-  padding: 8px 0;
-  cursor: pointer;
-  transition: color 120ms, background 120ms;
-}
-.seg-btn:hover { color: var(--text); }
-.seg-btn.active {
-  background: var(--text);
-  color: var(--bg);
-  font-weight: 500;
-}
-
 /* Corner icons (over canvas, top-right) */
 .corner {
   position: absolute;
