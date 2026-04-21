@@ -75,7 +75,7 @@
       <code>AudioWorklet</code>'s <code>process()</code> with 128 samples at a time and
       expects the next block to be ready before the current one finishes playing. At
       48 kHz that's 2,667 μs per callback. The <code>% budget</code> column shows how
-      much of that window each configuration consumes — anything well under 100% can
+      much of that window each configuration consumes. Anything well under 100% can
       run live alongside the rest of the audio graph.
     </p>
     <p>WASM SIMD support: <span id="simd"></span></p>
