@@ -359,7 +359,9 @@ body.paused #pauseToggle .ic-play { display: block; }
 }
 .statusbar .brand {
   color: var(--text);
+  text-decoration: none;
 }
+.statusbar .brand:hover { color: #fff; }
 .statusbar .stats {
   display: flex;
   gap: 22px;
