@@ -248,7 +248,7 @@ body.paused #pauseToggle .ic-play { display: block; }
   position: absolute;
   right: 8px;
   transform: translateY(50%);
-  text-shadow: 0 0 4px #000, 0 1px 3px #000;
+  text-shadow: 0 0 6px #000, 0 0 3px #000, 0 1px 3px #000;
   font-variant-numeric: tabular-nums;
 }
 
