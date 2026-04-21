@@ -114,16 +114,16 @@ const spectrogram = bank.resonate(signal, 256); // Float32Array, interleaved [re
 
 ## Benchmarks
 
-Throughput of `process_samples` across a bank of resonators, measured against [noFFT][nofft] compiled with equivalent flags.
+Throughput of `bank.resonate(signal, hop)` measured against [noFFT][nofft] (installed from PyPI). noFFT uses Apple's Accelerate framework under the hood.
 
-| Bins | Hop | Mac M2 Max (ours / noFFT / ratio) | Ryzen 7xxx (ours / noFFT / ratio) |
-|---|---|---|---|
-| 88  | 1 | TBD | TBD |
-| 264 | 1 | TBD | TBD |
-| 440 | 1 | TBD | TBD |
-| 880 | 1 | TBD | TBD |
+| Bins | Hop | resonators | noFFT | ratio |
+|------|-----|------------|-------|-------|
+| 88  | 256 | 23.88 M/s | 14.98 M/s | 1.59× |
+| 264 | 256 |  8.89 M/s |  5.49 M/s | 1.62× |
+| 440 | 256 |  5.44 M/s |  3.42 M/s | 1.59× |
+| 880 | 256 |  2.80 M/s |  1.73 M/s | 1.62× |
 
-*Sample rate: 48 kHz. Compiled with `-C target-cpu=native`. Numbers TBD.*
+*Apple M2 Max, 44.1 kHz, compiled with `-C target-cpu=native`. Reproduce with `uv run scripts/benchmark.py`. On other platforms, `cargo bench --bench bank` measures per-sample throughput.*
 
 ## Credits
 
