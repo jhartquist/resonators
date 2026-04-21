@@ -312,4 +312,40 @@ mod tests {
         bank.reset();
         assert_eq!(bank.complex(0), Complex32::new(0.0, 0.0));
     }
+
+    #[test]
+    fn resonate_empty_signal() {
+        let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
+        let mut bank = ResonatorBank::new(&configs, 44100.0);
+        assert!(bank.resonate(&[], 256).is_empty());
+    }
+
+    #[test]
+    fn resonate_signal_shorter_than_hop() {
+        let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
+        let mut bank = ResonatorBank::new(&configs, 44100.0);
+        let signal = vec![0.5f32; 100];
+        assert!(bank.resonate(&signal, 256).is_empty());
+    }
+
+    #[test]
+    fn resonate_drops_trailing_samples() {
+        let configs = vec![
+            ResonatorConfig::new(440.0, 0.01, 0.01),
+            ResonatorConfig::new(880.0, 0.01, 0.01),
+        ];
+        let mut bank = ResonatorBank::new(&configs, 44100.0);
+        let hop = 256;
+        let signal = vec![0.5f32; 3 * hop + 50];
+        let out = bank.resonate(&signal, hop);
+        assert_eq!(out.len(), 3 * bank.len());
+    }
+
+    #[test]
+    #[should_panic]
+    fn resonate_panics_on_zero_hop() {
+        let configs = vec![ResonatorConfig::new(440.0, 0.01, 0.01)];
+        let mut bank = ResonatorBank::new(&configs, 44100.0);
+        let _ = bank.resonate(&[0.0; 100], 0);
+    }
 }
