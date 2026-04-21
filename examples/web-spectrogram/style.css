@@ -270,11 +270,6 @@ body.paused #pauseToggle .ic-play { display: block; }
   text-align: center;
   max-width: 460px;
   padding: 0 28px;
-  animation: fadeUp 480ms cubic-bezier(.2,.8,.2,1);
-}
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 .landing-card .brand-mark {
   font-size: 11px;
@@ -369,17 +364,9 @@ body.paused #pauseToggle .ic-play { display: block; }
   background: #4ade80;
   margin-right: 8px;
   transform: translateY(-1px);
-  animation: pulse 1.6s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
 }
 body.paused .statusbar .live { color: var(--text); }
-body.paused .statusbar .live::before {
-  background: var(--muted);
-  animation: none;
-}
+body.paused .statusbar .live::before { background: var(--muted); }
 
 /* Visibility tied to mic state */
 body:not(.mic-on) .corner,
