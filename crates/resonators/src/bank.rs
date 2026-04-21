@@ -146,8 +146,8 @@ impl ResonatorBank {
     pub fn resonate(&mut self, signal: &[f32], hop: usize) -> Vec<Complex32> {
         let n_frames = signal.len() / hop;
         let mut out = Vec::with_capacity(n_frames * self.n_resonators);
-        for frame in 0..n_frames {
-            self.process_samples(&signal[frame * hop..(frame + 1) * hop]);
+        for chunk in signal.chunks_exact(hop) {
+            self.process_samples(chunk);
             for (&r, &i) in self.rr_re.iter().zip(&self.rr_im) {
                 out.push(Complex32::new(r, i));
             }
