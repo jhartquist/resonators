@@ -1,6 +1,6 @@
-// Polyfill MUST be imported before resonators.js — wasm-bindgen's module-level
-// init constructs a TextDecoder, which AudioWorkletGlobalScope doesn't provide.
-// ES module imports execute in declaration order, so this works.
+// Polyfill MUST be imported before resonators.js, because wasm-bindgen's
+// module-level init constructs a TextDecoder, which AudioWorkletGlobalScope
+// doesn't provide. ES module imports execute in declaration order.
 import './polyfill.js';
 import init, { ResonatorBank, heuristic_alpha } from './pkg/resonators.js';
 
