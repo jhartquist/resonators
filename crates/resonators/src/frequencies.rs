@@ -1,3 +1,5 @@
+/// Converts a MIDI note number to a frequency, in Hz, given a tuning
+/// reference for A4 (MIDI 69).
 pub fn midi_to_hz(midi: f32, tuning: f32) -> f32 {
     tuning * 2.0f32.powf((midi - 69.0) / 12.0)
 }

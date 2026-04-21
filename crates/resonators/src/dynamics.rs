@@ -1,8 +1,15 @@
+/// Returns a reasonable default `alpha` (EWMA coefficient) for a resonator at
+/// the given frequency, using the per-frequency heuristic from the [paper].
+///
+/// Higher frequencies receive a larger `alpha` (shorter time constant).
+///
+/// [paper]: https://alexandrefrancois.org/assets/publications/FrancoisARJ-ICMC2025.pdf
 pub fn heuristic_alpha(freq: f32, sample_rate: f32) -> f32 {
     let dt = 1.0 / sample_rate;
     1.0 - (-dt * freq / (1.0 + freq).log10()).exp()
 }
 
+/// Returns [`heuristic_alpha`] applied to each frequency in `freqs`.
 pub fn heuristic_alphas(freqs: &[f32], sample_rate: f32) -> Vec<f32> {
     freqs
         .iter()
@@ -10,11 +17,13 @@ pub fn heuristic_alphas(freqs: &[f32], sample_rate: f32) -> Vec<f32> {
         .collect()
 }
 
+/// Converts an EWMA time constant `tau` (in seconds) to an `alpha` coefficient.
 pub fn alpha_from_tau(tau: f32, sample_rate: f32) -> f32 {
     let dt = 1.0 / sample_rate;
     1.0 - (-dt / tau).exp()
 }
 
+/// Converts an `alpha` coefficient to an EWMA time constant `tau`, in seconds.
 pub fn tau_from_alpha(alpha: f32, sample_rate: f32) -> f32 {
     let dt = 1.0 / sample_rate;
     -dt / (1.0 - alpha).ln()

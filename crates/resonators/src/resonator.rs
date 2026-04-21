@@ -5,6 +5,11 @@ use num_complex::Complex32;
 use crate::STABILIZE_EVERY;
 use crate::config::ResonatorConfig;
 
+/// A single resonator tuned to a fixed frequency.
+///
+/// For most applications, prefer [`ResonatorBank`](crate::ResonatorBank),
+/// which processes many resonators together. `Resonator` is useful for
+/// single-bin analysis or composing custom bank-like structures.
 pub struct Resonator {
     freq: f32,
     alpha: f32,
@@ -31,6 +36,7 @@ pub struct Resonator {
 }
 
 impl Resonator {
+    /// Creates a new resonator from the given config and sample rate.
     pub fn new(config: ResonatorConfig, sample_rate: f32) -> Self {
         let ResonatorConfig { freq, alpha, beta } = config;
         let phasor_angle = -2.0 * PI * freq / sample_rate;
@@ -50,6 +56,7 @@ impl Resonator {
         }
     }
 
+    /// Updates the resonator with a single input sample.
     pub fn process_sample(&mut self, sample: f32) {
         // update raw output via EWMA
         self.r_re = (1.0 - self.alpha) * self.r_re + self.alpha * sample * self.z_re;
@@ -72,6 +79,7 @@ impl Resonator {
         }
     }
 
+    /// Updates the resonator with a block of input samples, in order.
     #[inline]
     pub fn process_samples(&mut self, samples: &[f32]) {
         for &s in samples {
@@ -85,6 +93,8 @@ impl Resonator {
         self.z_im /= mag;
     }
 
+    /// Clears all accumulated state. Frequency and time constants are
+    /// preserved.
     pub fn reset(&mut self) {
         self.z_re = 1.0;
         self.z_im = 0.0;
@@ -95,22 +105,27 @@ impl Resonator {
         self.sample_count = 0;
     }
 
+    /// Returns the resonant frequency, in Hz.
     pub fn freq(&self) -> f32 {
         self.freq
     }
 
+    /// Returns the current power (squared magnitude).
     pub fn power(&self) -> f32 {
         self.rr_re * self.rr_re + self.rr_im * self.rr_im
     }
 
+    /// Returns the current magnitude.
     pub fn magnitude(&self) -> f32 {
         self.power().sqrt()
     }
 
+    /// Returns the current phase, in radians.
     pub fn phase(&self) -> f32 {
         self.rr_im.atan2(self.rr_re)
     }
 
+    /// Returns the current complex value.
     pub fn complex(&self) -> Complex32 {
         Complex32::new(self.rr_re, self.rr_im)
     }

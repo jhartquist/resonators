@@ -4,7 +4,18 @@ use num_complex::Complex32;
 
 use crate::STABILIZE_EVERY;
 use crate::config::ResonatorConfig;
+use crate::dynamics::heuristic_alphas;
 
+/// A bank of independent resonators, each tuned to a fixed frequency.
+///
+/// Construct with [`from_frequencies`](ResonatorBank::from_frequencies) for
+/// the common case, or [`new`](ResonatorBank::new) for custom per-resonator
+/// parameters. Feed samples in one at a time with
+/// [`process_sample`](ResonatorBank::process_sample) or in chunks with
+/// [`process_samples`](ResonatorBank::process_samples). Read per-bin
+/// magnitudes, powers, phases, or complex values at any time. For one-shot
+/// processing of a full signal into a spectrogram-like output, use
+/// [`resonate`](ResonatorBank::resonate).
 pub struct ResonatorBank {
     n_resonators: usize,
     frequencies: Vec<f32>,
@@ -33,6 +44,23 @@ pub struct ResonatorBank {
 
 #[allow(clippy::len_without_is_empty)]
 impl ResonatorBank {
+    /// Creates a new bank from a slice of frequencies, with
+    /// [`heuristic_alpha`](crate::heuristic_alpha) used for each resonator's
+    /// `alpha` and `beta`. For custom per-resonator parameters, use
+    /// [`new`](ResonatorBank::new) with an explicit slice of
+    /// [`ResonatorConfig`].
+    pub fn from_frequencies(freqs: &[f32], sample_rate: f32) -> Self {
+        let alphas = heuristic_alphas(freqs, sample_rate);
+        let configs: Vec<ResonatorConfig> = freqs
+            .iter()
+            .zip(&alphas)
+            .map(|(&f, &a)| ResonatorConfig::new(f, a, a))
+            .collect();
+        Self::new(&configs, sample_rate)
+    }
+
+    /// Creates a new bank with one resonator per config, all sharing the
+    /// given sample rate.
     pub fn new(configs: &[ResonatorConfig], sample_rate: f32) -> Self {
         let n_resonators = configs.len();
 
@@ -68,6 +96,7 @@ impl ResonatorBank {
         }
     }
 
+    /// Updates every resonator with a single input sample.
     #[inline]
     pub fn process_sample(&mut self, sample: f32) {
         for k in 0..self.n_resonators {
@@ -96,6 +125,7 @@ impl ResonatorBank {
         }
     }
 
+    /// Updates every resonator with a block of input samples, in order.
     #[inline]
     pub fn process_samples(&mut self, samples: &[f32]) {
         for &s in samples {
@@ -103,6 +133,16 @@ impl ResonatorBank {
         }
     }
 
+    /// Processes `signal` in hops and returns the complex state of every
+    /// resonator at the end of each hop.
+    ///
+    /// The output is laid out row-major with shape `(n_frames, n_bins)`, where
+    /// `n_frames = signal.len() / hop` and `n_bins = self.len()`. Any trailing
+    /// samples (fewer than `hop`) are dropped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `hop` is `0`.
     pub fn resonate(&mut self, signal: &[f32], hop: usize) -> Vec<Complex32> {
         let n_frames = signal.len() / hop;
         let mut out = Vec::with_capacity(n_frames * self.n_resonators);
@@ -123,6 +163,8 @@ impl ResonatorBank {
         }
     }
 
+    /// Clears all accumulated state. Frequencies and time constants are
+    /// preserved.
     pub fn reset(&mut self) {
         self.z_re.fill(1.0);
         self.z_im.fill(0.0);
@@ -133,42 +175,52 @@ impl ResonatorBank {
         self.sample_count = 0;
     }
 
+    /// Returns the number of resonators in the bank.
     pub fn len(&self) -> usize {
         self.n_resonators
     }
 
+    /// Returns the resonant frequency of bin `i`, in Hz.
     pub fn freq(&self, i: usize) -> f32 {
         self.frequencies[i]
     }
 
+    /// Returns the current power (squared magnitude) at bin `i`.
     pub fn power(&self, i: usize) -> f32 {
         self.rr_re[i] * self.rr_re[i] + self.rr_im[i] * self.rr_im[i]
     }
 
+    /// Returns the current magnitude at bin `i`.
     pub fn magnitude(&self, i: usize) -> f32 {
         self.power(i).sqrt()
     }
 
+    /// Returns the current phase at bin `i`, in radians.
     pub fn phase(&self, i: usize) -> f32 {
         self.rr_im[i].atan2(self.rr_re[i])
     }
 
+    /// Returns the current complex value at bin `i`.
     pub fn complex(&self, i: usize) -> Complex32 {
         Complex32::new(self.rr_re[i], self.rr_im[i])
     }
 
+    /// Returns a copy of every resonator's resonant frequency, in Hz.
     pub fn frequencies(&self) -> Vec<f32> {
         self.frequencies.clone()
     }
 
+    /// Returns the current magnitude of every bin.
     pub fn magnitudes(&self) -> Vec<f32> {
         (0..self.n_resonators).map(|i| self.magnitude(i)).collect()
     }
 
+    /// Returns the current phase of every bin, in radians.
     pub fn phases(&self) -> Vec<f32> {
         (0..self.n_resonators).map(|i| self.phase(i)).collect()
     }
 
+    /// Returns the current power of every bin.
     pub fn powers(&self) -> Vec<f32> {
         (0..self.n_resonators).map(|i| self.power(i)).collect()
     }
