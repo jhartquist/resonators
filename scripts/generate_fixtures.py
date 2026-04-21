@@ -34,7 +34,7 @@ signal = (
     )
 ).astype(np.float32)
 
-# Reference output — noFFT.resonate returns a flat float array of
+# Reference output. noFFT.resonate returns a flat float array of shape
 # (num_frames * 2 * num_resonators,), interleaved as [re, im] pairs per frame.
 raw = noFFT.resonate(signal, SR, freqs, alphas, alphas, HOP)
 assert raw.size % (2 * len(freqs)) == 0, (
