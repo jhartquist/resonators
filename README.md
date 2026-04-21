@@ -18,7 +18,7 @@ A Rust implementation of Alexandre François's [Resonate algorithm][paper] for l
 
 This project implements Alexandre François's [Resonate algorithm][resonate] for computing spectral representations of an input signal. It produces outputs similar to STFT or CQT, with per-sample updates and no windowing or buffering. Internally, it's a bank of independent resonators (conceptually phasor-like oscillators) each tuned to a fixed frequency and accumulating the input's contribution via an exponentially weighted moving average. Because every resonator has its own frequency and its own time constant, you get per-bin control over the time-frequency tradeoff.
 
-It's based on Alexandre's reference implementation, [noFFT][nofft], which is written in C++ and depends on Apple's Accelerate framework (macOS/iOS only). I created this to generate features for training ML models in Python and for inference in the browser via WASM. Writing it in Rust allows for portable SIMD and consistent numerical results across platforms (see [Benchmarks](#benchmarks)).
+It's based on Alexandre's reference implementation, [noFFT][nofft], which is written in C++ and depends on Apple's Accelerate framework (macOS/iOS only). I created this to generate features for training ML models in Python and for inference in the browser via WASM. Writing it in Rust allows for portable SIMD and consistent numerical results across platforms.
 
 ## When to use it
 
@@ -123,7 +123,9 @@ Throughput of `bank.resonate(signal, hop)` measured against [noFFT][nofft] (inst
 | 440 | 256 |  5.44 M/s |  3.42 M/s | 1.59× |
 | 880 | 256 |  2.80 M/s |  1.73 M/s | 1.62× |
 
-*Apple M2 Max, 44.1 kHz, compiled with `-C target-cpu=native`. Reproduce with `uv run scripts/benchmark.py`. On other platforms, `cargo bench --bench bank` measures per-sample throughput.*
+- Measured on Apple M2 Max, compiled with `-C target-cpu=native`.
+- Reproduce with `uv run scripts/benchmark.py`.
+- On other platforms, `cargo bench --bench bank` measures per-sample throughput.
 
 ## Credits
 
