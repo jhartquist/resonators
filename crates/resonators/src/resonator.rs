@@ -63,7 +63,7 @@ impl Resonator {
         self.r_re = (1.0 - self.alpha) * self.r_re + self.alpha * sample * self.z_re;
         self.r_im = (1.0 - self.alpha) * self.r_im + self.alpha * sample * self.z_im;
 
-        // update smoothed output via second EMWA
+        // update smoothed output via second EWMA
         self.rr_re = (1.0 - self.beta) * self.rr_re + self.beta * self.r_re;
         self.rr_im = (1.0 - self.beta) * self.rr_im + self.beta * self.r_im;
 
