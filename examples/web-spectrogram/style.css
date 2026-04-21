@@ -29,7 +29,7 @@ html, body {
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
 }
 .main {
   display: flex;
@@ -393,7 +393,7 @@ body:not(.mic-on) .statusbar { display: none; }
     right: 0;
     bottom: 0;
     width: auto;
-    max-height: 55vh;
+    max-height: 55dvh;
     transform: translateY(100%);
     transition: transform 240ms cubic-bezier(.2,.8,.2,1);
     border-left: none;
@@ -410,7 +410,7 @@ body:not(.mic-on) .statusbar { display: none; }
   .sidebar-inner {
     width: auto;
     height: auto;
-    max-height: 55vh;
+    max-height: 55dvh;
     padding: 20px 22px 24px;
   }
 }
