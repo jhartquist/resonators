@@ -329,6 +329,22 @@ body.paused #pauseToggle .ic-play { display: block; }
 .landing-card .footnote .err {
   color: #d96f6f;
 }
+.landing-credit {
+  margin-top: 22px;
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  line-height: 1.7;
+}
+.landing-credit a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.landing-credit a:hover {
+  color: var(--text);
+}
 
 /* Status bar */
 .statusbar {
