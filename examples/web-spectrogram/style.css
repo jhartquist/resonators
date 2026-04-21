@@ -272,11 +272,11 @@ body.paused #pauseToggle .ic-play { display: block; }
   padding: 0 28px;
 }
 .landing-card .brand-mark {
-  font-size: 11px;
-  letter-spacing: 0.32em;
+  font-size: 14px;
+  letter-spacing: 0.3em;
   text-transform: uppercase;
   color: var(--muted);
-  margin-bottom: 22px;
+  margin-bottom: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
