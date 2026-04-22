@@ -1,6 +1,6 @@
 # resonato**rs**
 
-A Rust implementation of Alexandre François's [Resonate algorithm][paper] for low-latency spectral analysis, with Python and WebAssembly bindings.
+A Rust implementation of Alexandre François's [Resonate algorithm][resonate] for low-latency spectral analysis, with Python and WebAssembly bindings.
 
 [![crates.io](https://img.shields.io/crates/v/resonators.svg)](https://crates.io/crates/resonators)
 [![PyPI](https://img.shields.io/pypi/v/resonators.svg)](https://pypi.org/project/resonators/)
@@ -33,16 +33,17 @@ It's based on Alexandre's reference implementation, [noFFT][nofft], which is wri
 - General-purpose STFT or CQT analysis: use [librosa](https://librosa.org/) or similar
 - Offline batch where FFT's O(N log N) per frame is fine
 
-## Demo
+## Browser Demos
 
-![live spectrogram demo screenshot](images/spectrogram-demo.png)
+### [Live Spectrogram](https://jhartquist.github.io/resonators/spectrogram/)
 
-*[Try it in your browser](https://jhartquist.github.io/resonators/spectrogram/).*
+[![live spectrogram demo screenshot](images/spectrogram-demo.png)](https://jhartquist.github.io/resonators/spectrogram/)
 
-Live in the browser:
+Loads the WASM build of the crate into an `AudioWorkletNode`, feeds it live microphone samples through a bank of 440 resonators (5 per semitone from A0 to C8), and writes the bank's magnitudes into a ring-buffer R32F texture. A WebGL2 fragment shader samples the texture, converts to dB, and applies a colormap.
 
-- [**Spectrogram**](https://jhartquist.github.io/resonators/spectrogram/): feed your mic through a resonator bank in real time
-- [**Benchmark**](https://jhartquist.github.io/resonators/bench/): run the WASM bank in your browser
+### [In-browser Benchmark](https://jhartquist.github.io/resonators/bench/)
+
+Loads the WASM build into a `Worker`, runs the bank over one second of pseudo-random noise at 48 kHz, and times the result. Reports nanoseconds per sample, microseconds per 128-sample quantum, and the percentage of `AudioWorklet` callback budget consumed at 88, 264, 440, and 880 bins.
 
 ## Install
 
@@ -113,6 +114,14 @@ for (let i = 0; i < signal.length; i++) {
 }
 const spectrogram = bank.resonate(signal, 256); // Float32Array, interleaved [re, im, ...]
 ```
+
+## Examples
+
+![resonator bank spectrograms of a trumpet sample with linear and log frequency axes](images/spectrograms.png)
+
+*Same trumpet sample from [librosa](https://librosa.org), rendered through two banks with different bin layouts: linear-spaced on the left, log-spaced on the right. The resonator algorithm is layout-agnostic, so you can match the bin structure to whatever analysis you're doing.*
+
+Reproduce with `uv run scripts/example.py`.
 
 ## Benchmarks
 
