@@ -261,7 +261,6 @@ function layoutAxis() {
     axisEl.appendChild(div);
   }
 }
-layoutAxis();
 
 // --- controls ---
 document.getElementById('cmap').addEventListener('change', (e) => setColormap(e.target.value));
