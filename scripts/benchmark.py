@@ -15,8 +15,8 @@ from time import perf_counter
 import noFFT
 from resonators import ResonatorBank, heuristic_alphas
 
-SR = 44100
-HOP = 256
+SAMPLE_RATE = 44100
+HOP_SIZE = 256
 N_SECONDS = 5
 BIN_COUNTS = [88, 264, 440, 880]
 WARMUPS = 3
@@ -24,24 +24,30 @@ RUNS = 5
 
 
 def make_configs(n_bins: int):
+    """Return (frequencies, alphas) for a bank of n_bins log-spaced over the piano range."""
     freqs = np.geomspace(27.5, 4186.0, n_bins).astype(np.float32)
-    alphas = heuristic_alphas(freqs, SR).astype(np.float32)
+    alphas = heuristic_alphas(freqs, SAMPLE_RATE).astype(np.float32)
     return freqs, alphas
 
 
 def make_signal() -> np.ndarray:
-    t = np.arange(SR * N_SECONDS, dtype=np.float32) / SR
-    f0, f1 = 27.5, 4186.0
-    phase = 2 * np.pi * f0 * N_SECONDS / np.log(f1 / f0) * ((f1 / f0) ** (t / N_SECONDS) - 1)
+    """Generate a log-sweep sine from 27.5 Hz (A0) to 4186 Hz (C8) over N_SECONDS."""
+    t = np.arange(SAMPLE_RATE * N_SECONDS, dtype=np.float32) / SAMPLE_RATE
+    start_freq, end_freq = 27.5, 4186.0
+    phase = (
+        2 * np.pi * start_freq * N_SECONDS / np.log(end_freq / start_freq)
+        * ((end_freq / start_freq) ** (t / N_SECONDS) - 1)
+    )
     return (0.5 * np.cos(phase)).astype(np.float32)
 
 
 def time_resonators(freqs, alphas, signal):
-    bank = ResonatorBank(freqs, SR, alphas=alphas)
+    """Return median wall-clock seconds to run the resonators bank over signal."""
+    bank = ResonatorBank(freqs, SAMPLE_RATE, alphas=alphas)
 
     def run():
         bank.reset()
-        return bank.resonate(signal, HOP)
+        return bank.resonate(signal, HOP_SIZE)
 
     for _ in range(WARMUPS):
         run()
@@ -54,8 +60,9 @@ def time_resonators(freqs, alphas, signal):
 
 
 def time_nofft(freqs, alphas, signal):
+    """Return median wall-clock seconds to run noFFT over signal."""
     def run():
-        return noFFT.resonate(signal, SR, freqs, alphas, alphas, HOP)
+        return noFFT.resonate(signal, SAMPLE_RATE, freqs, alphas, alphas, HOP_SIZE)
 
     for _ in range(WARMUPS):
         run()
@@ -70,18 +77,24 @@ def time_nofft(freqs, alphas, signal):
 def main():
     signal = make_signal()
     rows = []
-    for n in BIN_COUNTS:
-        freqs, alphas = make_configs(n)
-        t_res = time_resonators(freqs, alphas, signal)
-        t_nof = time_nofft(freqs, alphas, signal)
-        m_res = len(signal) / t_res / 1e6
-        m_nof = len(signal) / t_nof / 1e6
-        rows.append((n, m_res, m_nof, m_res / m_nof))
+    for n_bins in BIN_COUNTS:
+        freqs, alphas = make_configs(n_bins)
+        seconds_resonators = time_resonators(freqs, alphas, signal)
+        seconds_nofft = time_nofft(freqs, alphas, signal)
+        throughput_resonators = len(signal) / seconds_resonators / 1e6
+        throughput_nofft = len(signal) / seconds_nofft / 1e6
+        ratio = throughput_resonators / throughput_nofft
+        rows.append((n_bins, throughput_resonators, throughput_nofft, ratio))
 
-    print("| bins | resonators | noFFT     | ratio  |")
-    print("|------|------------|-----------|--------|")
-    for n, m_res, m_nof, ratio in rows:
-        print(f"| {n:4d} | {m_res:6.2f} M/s | {m_nof:6.2f} M/s | {ratio:.2f}× |")
+    print("| bins | resonators       | noFFT            | ratio  |")
+    print("|------|------------------|------------------|--------|")
+    for n_bins, throughput_resonators, throughput_nofft, ratio in rows:
+        print(
+            f"| {n_bins:4d} "
+            f"| {throughput_resonators:6.2f} Msamples/s "
+            f"| {throughput_nofft:6.2f} Msamples/s "
+            f"| {ratio:.2f}× |"
+        )
 
 
 if __name__ == "__main__":
