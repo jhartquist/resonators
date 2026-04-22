@@ -35,6 +35,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -42,6 +43,7 @@ jobs:
       - name: Build free-threaded wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python3.14t
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -50,7 +52,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-linux-${{ matrix.platform.target }}
-          path: dist
+          path: crates/resonators-py/dist
 
   musllinux:
     runs-on: ${{ matrix.platform.runner }}
@@ -73,6 +75,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -80,6 +83,7 @@ jobs:
       - name: Build free-threaded wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python3.14t
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -88,7 +92,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-musllinux-${{ matrix.platform.target }}
-          path: dist
+          path: crates/resonators-py/dist
 
   windows:
     runs-on: ${{ matrix.platform.runner }}
@@ -113,6 +117,7 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -123,6 +128,7 @@ jobs:
       - name: Build free-threaded wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python3.14t
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -130,7 +136,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-windows-${{ matrix.platform.target }}
-          path: dist
+          path: crates/resonators-py/dist
 
   macos:
     runs-on: ${{ matrix.platform.runner }}
@@ -149,12 +155,14 @@ jobs:
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Build free-threaded wheels
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           target: ${{ matrix.platform.target }}
           args: --release --out dist -i python3.14t
           sccache: ${{ !startsWith(github.ref, 'refs/tags/') }}
@@ -162,7 +170,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: wheels-macos-${{ matrix.platform.target }}
-          path: dist
+          path: crates/resonators-py/dist
 
   sdist:
     runs-on: ubuntu-latest
@@ -171,13 +179,14 @@ jobs:
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
+          working-directory: crates/resonators-py
           command: sdist
           args: --out dist
       - name: Upload sdist
         uses: actions/upload-artifact@v6
         with:
           name: wheels-sdist
-          path: dist
+          path: crates/resonators-py/dist
 
   release:
     name: Release
