@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Python 0.1.1] - 2026-04-22
+
+### Changed
+
+- Linux and Windows x86_64 wheels now target `x86-64-v3` (Haswell, 2013+) to enable AVX2 + FMA auto-vectorization in the resonator hot loop. On Linux, this is typically a 20-50x speedup over the `0.1.0` wheel. Users on pre-Haswell CPUs should install from sdist with custom `RUSTFLAGS`.
+
 ## [0.1.0] - 2026-04-21
 
 ### Added
