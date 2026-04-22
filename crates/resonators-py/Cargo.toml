@@ -15,6 +15,6 @@ crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-resonators = { path = "../resonators" }
+resonators = { path = "../resonators", version = "0.1" }
 pyo3 = { version = "0.28", features = ["extension-module", "abi3-py39", "num-complex"] }
 numpy = "0.28"
