@@ -1,10 +1,10 @@
 # resonators
 
-A Rust implementation of Alexandre François's [Resonate algorithm][paper] for low-latency spectral analysis.
+A Rust implementation of Alexandre François's [Resonate algorithm][resonate] for low-latency spectral analysis.
 
 See the [main repository](https://github.com/jhartquist/resonators) for details, demos, benchmarks, and attribution.
 
-[paper]: https://alexandrefrancois.org/assets/publications/FrancoisARJ-ICMC2025.pdf
+[resonate]: https://alexandrefrancois.org/Resonate/
 
 ## Install
 
