@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 doc = false
 
 [dependencies]
-resonators = { path = "../resonators" }
+resonators = { path = "../resonators", version = "0.1" }
 wasm-bindgen = "0.2"
 
 [package.metadata.wasm-pack.profile.release]
