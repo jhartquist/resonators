@@ -31,8 +31,6 @@ function makeNoise(n) {
 
 async function run() {
   await init();
-  postMessage({ type: 'ready', total: BIN_COUNTS.length });
-
   const signal = makeNoise(N_SAMPLES);
 
   for (let i = 0; i < BIN_COUNTS.length; i++) {
