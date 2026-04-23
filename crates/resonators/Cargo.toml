@@ -22,3 +22,11 @@ harness = false
 
 [dependencies]
 num-complex = "0.4.6"
+
+# WASM SIMD128 only. `wide::f32x4` is used by the per-sample bank inner
+# loop when compiling for wasm32 with `target-feature=+simd128` enabled.
+# On every other target the scalar path is used (LLVM auto-vectorises
+# it to SSE/NEON just fine, and explicit SIMD there either matches or
+# slightly regresses vs auto-vectorised scalar in our benchmarks).
+[target.'cfg(all(target_arch = "wasm32", target_feature = "simd128"))'.dependencies]
+wide = "0.8"

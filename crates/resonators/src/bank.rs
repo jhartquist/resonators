@@ -6,6 +6,36 @@ use crate::STABILIZE_EVERY;
 use crate::config::ResonatorConfig;
 use crate::dynamics::heuristic_alphas;
 
+// WASM SIMD128 is the only target where explicit SIMD meaningfully beats
+// LLVM auto-vectorisation of the scalar loop. On x86_64 (SSE baseline)
+// and aarch64 (NEON baseline) auto-vectorisation gets the same or better
+// throughput; on wasm32 without `+simd128` there's no SIMD to emit. See
+// `process_sample_inner` below for the two implementations.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+use wide::f32x4;
+
+/// Unaligned 128-bit load of four contiguous `f32`s starting at `buf[offset]`.
+///
+/// # Safety
+/// Caller must ensure `offset + 4 <= buf.len()`.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+#[inline(always)]
+unsafe fn load_f32x4(buf: &[f32], offset: usize) -> f32x4 {
+    unsafe { core::ptr::read_unaligned(buf.as_ptr().add(offset) as *const f32x4) }
+}
+
+/// Unaligned 128-bit store of four contiguous `f32`s starting at `buf[offset]`.
+///
+/// # Safety
+/// Caller must ensure `offset + 4 <= buf.len()`.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+#[inline(always)]
+unsafe fn store_f32x4(buf: &mut [f32], offset: usize, value: f32x4) {
+    unsafe {
+        core::ptr::write_unaligned(buf.as_mut_ptr().add(offset) as *mut f32x4, value);
+    }
+}
+
 /// A bank of independent resonators, each tuned to a fixed frequency.
 ///
 /// Construct with [`from_frequencies`](ResonatorBank::from_frequencies) for
@@ -104,6 +134,42 @@ impl ResonatorBank {
     /// Updates every resonator with a single input sample.
     #[inline]
     pub fn process_sample(&mut self, sample: f32) {
+        self.process_sample_inner(sample);
+        self.sample_count += 1;
+        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+            self.stabilize();
+        }
+    }
+
+    /// Updates every resonator with a block of input samples, in order.
+    ///
+    /// Amortises the per-sample stabilisation check by batching up to
+    /// `STABILIZE_EVERY` samples between stabilisations instead of running
+    /// the modulo test inside the hot loop.
+    #[inline]
+    pub fn process_samples(&mut self, samples: &[f32]) {
+        let mut i = 0;
+        while i < samples.len() {
+            let until_stabilize = STABILIZE_EVERY - (self.sample_count % STABILIZE_EVERY);
+            let take = (samples.len() - i).min(until_stabilize as usize);
+            for &s in &samples[i..i + take] {
+                self.process_sample_inner(s);
+            }
+            self.sample_count += take as u64;
+            if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+                self.stabilize();
+            }
+            i += take;
+        }
+    }
+
+    /// Scalar per-sample update across all bins. LLVM auto-vectorises this
+    /// well enough on x86_64 (SSE) and aarch64 (NEON) that explicit SIMD
+    /// matches or slightly regresses it; this is also the fallback on
+    /// wasm32 builds without `+simd128`.
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    #[inline(always)]
+    fn process_sample_inner(&mut self, sample: f32) {
         for k in 0..self.n_resonators {
             let alpha = self.alphas[k];
             let beta = self.betas[k];
@@ -113,28 +179,99 @@ impl ResonatorBank {
             self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
             self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
 
-            // output smoothing
+            // Output smoothing
             self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
             self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
 
-            // rotate phasor
+            // Rotate phasor
             let zr = self.z_re[k];
             let zi = self.z_im[k];
             self.z_re[k] = zr * self.w_re[k] - zi * self.w_im[k];
             self.z_im[k] = zr * self.w_im[k] + zi * self.w_re[k];
         }
-
-        self.sample_count += 1;
-        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
-            self.stabilize();
-        }
     }
 
-    /// Updates every resonator with a block of input samples, in order.
-    #[inline]
-    pub fn process_samples(&mut self, samples: &[f32]) {
-        for &s in samples {
-            self.process_sample(s);
+    /// WASM-SIMD128 per-sample update: processes 4 bins per iteration via
+    /// `wide::f32x4`, mapping to `v128.*` instructions. Loads / stores go
+    /// through `ptr::read_unaligned` / `write_unaligned` so they lower to
+    /// single `v128.load` / `v128.store` ops — the array-literal
+    /// `f32x4::new([a,b,c,d])` path generates per-lane inserts and
+    /// defeats vectorisation.
+    ///
+    /// Measured ~6-8x speedup over the scalar path in-browser (Firefox
+    /// 130, Chrome 131) at 88–880 bins; see PR description for numbers.
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    #[inline(always)]
+    fn process_sample_inner(&mut self, sample: f32) {
+        let n = self.n_resonators;
+        let vec_end = n & !3; // round down to multiple of 4
+
+        let sample_v = f32x4::splat(sample);
+        let one_v = f32x4::splat(1.0);
+
+        // Safety: all 10 backing `Vec<f32>` buffers share `n_resonators`
+        // elements; `vec_end` is `n & !3`, so every `k..k+4` subslice is
+        // in-bounds for every buffer. `f32x4` is `#[repr(C, align(16))]`
+        // with exactly 16 bytes — four contiguous f32s.
+        let mut k = 0;
+        unsafe {
+            while k < vec_end {
+                let alpha = load_f32x4(&self.alphas, k);
+                let beta = load_f32x4(&self.betas, k);
+                let z_re = load_f32x4(&self.z_re, k);
+                let z_im = load_f32x4(&self.z_im, k);
+                let r_re_old = load_f32x4(&self.r_re, k);
+                let r_im_old = load_f32x4(&self.r_im, k);
+                let rr_re_old = load_f32x4(&self.rr_re, k);
+                let rr_im_old = load_f32x4(&self.rr_im, k);
+                let w_re = load_f32x4(&self.w_re, k);
+                let w_im = load_f32x4(&self.w_im, k);
+
+                let one_m_alpha = one_v - alpha;
+                let one_m_beta = one_v - beta;
+                let alpha_sample = alpha * sample_v;
+
+                // EWMA accumulation: r = (1 - alpha) * r_prev + alpha_sample * z
+                let r_re = one_m_alpha.mul_add(r_re_old, alpha_sample * z_re);
+                let r_im = one_m_alpha.mul_add(r_im_old, alpha_sample * z_im);
+
+                // Output smoothing: rr = (1 - beta) * rr_prev + beta * r
+                let rr_re = one_m_beta.mul_add(rr_re_old, beta * r_re);
+                let rr_im = one_m_beta.mul_add(rr_im_old, beta * r_im);
+
+                // Phasor rotation: z_new = z * w (complex multiply)
+                let z_re_new = z_re * w_re - z_im * w_im;
+                let z_im_new = z_re * w_im + z_im * w_re;
+
+                store_f32x4(&mut self.r_re, k, r_re);
+                store_f32x4(&mut self.r_im, k, r_im);
+                store_f32x4(&mut self.rr_re, k, rr_re);
+                store_f32x4(&mut self.rr_im, k, rr_im);
+                store_f32x4(&mut self.z_re, k, z_re_new);
+                store_f32x4(&mut self.z_im, k, z_im_new);
+
+                k += 4;
+            }
+        }
+
+        // Scalar tail for any remaining bins (n not a multiple of 4).
+        while k < n {
+            let alpha = self.alphas[k];
+            let beta = self.betas[k];
+            let alpha_sample = alpha * sample;
+
+            self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
+            self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
+
+            self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
+            self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
+
+            let zr = self.z_re[k];
+            let zi = self.z_im[k];
+            self.z_re[k] = zr * self.w_re[k] - zi * self.w_im[k];
+            self.z_im[k] = zr * self.w_im[k] + zi * self.w_re[k];
+
+            k += 1;
         }
     }
 
