@@ -65,6 +65,8 @@ mod dynamics;
 mod frequencies;
 mod resonator;
 
+#[cfg(target_arch = "x86_64")]
+pub use bank::Backend;
 pub use bank::ResonatorBank;
 pub use config::ResonatorConfig;
 pub use dynamics::{alpha_from_tau, heuristic_alpha, heuristic_alphas, tau_from_alpha};

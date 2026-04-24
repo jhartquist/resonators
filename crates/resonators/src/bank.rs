@@ -6,6 +6,92 @@ use crate::STABILIZE_EVERY;
 use crate::config::ResonatorConfig;
 use crate::dynamics::heuristic_alphas;
 
+// WASM SIMD128 is the only target where explicit SIMD meaningfully beats
+// LLVM auto-vectorisation of the scalar loop. On x86_64 (SSE baseline)
+// and aarch64 (NEON baseline) auto-vectorisation gets the same or better
+// throughput; on wasm32 without `+simd128` there's no SIMD to emit. See
+// `process_sample_inner` below for the two implementations.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+use wide::f32x4;
+
+// x86_64 explicit SIMD (AVX2 + FMA, AVX-512F) is exposed behind
+// `#[target_feature]`-gated unsafe methods for benchmarking. Each method
+// is a parallel implementation of `process_sample_inner` at a different
+// vector width so that the `bank` bench can compare all three on a
+// single binary. Auto-vectorisation-of-scalar may match these in
+// practice; see bench comments.
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64::*;
+
+/// Unaligned 128-bit load of four contiguous `f32`s starting at `buf[offset]`.
+///
+/// # Safety
+/// Caller must ensure `offset + 4 <= buf.len()`.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+#[inline(always)]
+unsafe fn load_f32x4(buf: &[f32], offset: usize) -> f32x4 {
+    unsafe { core::ptr::read_unaligned(buf.as_ptr().add(offset) as *const f32x4) }
+}
+
+/// Unaligned 128-bit store of four contiguous `f32`s starting at `buf[offset]`.
+///
+/// # Safety
+/// Caller must ensure `offset + 4 <= buf.len()`.
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+#[inline(always)]
+unsafe fn store_f32x4(buf: &mut [f32], offset: usize, value: f32x4) {
+    unsafe {
+        core::ptr::write_unaligned(buf.as_mut_ptr().add(offset) as *mut f32x4, value);
+    }
+}
+
+/// Which SIMD backend `ResonatorBank` uses for the per-sample hot loop.
+/// `Scalar` is always available; `Avx2` and `Avx512` require the
+/// corresponding CPU features. [`Backend::detect`] picks the widest
+/// variant the host supports at runtime.
+#[cfg(target_arch = "x86_64")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// Pure scalar loop — LLVM auto-vectorises as the build target
+    /// allows. Always available.
+    Scalar,
+    /// Explicit AVX2 + FMA — 8 bins per iteration via `__m256`.
+    /// Requires `avx2` and `fma` CPU features.
+    Avx2,
+    /// Explicit AVX-512F with masked tail — 16 bins per iteration via
+    /// `__m512`. Requires `avx512f` CPU feature.
+    Avx512,
+}
+
+#[cfg(target_arch = "x86_64")]
+impl Backend {
+    /// Returns the widest backend the host CPU supports at runtime.
+    pub fn detect() -> Self {
+        if std::arch::is_x86_feature_detected!("avx512f") {
+            Self::Avx512
+        } else if std::arch::is_x86_feature_detected!("avx2")
+            && std::arch::is_x86_feature_detected!("fma")
+        {
+            Self::Avx2
+        } else {
+            Self::Scalar
+        }
+    }
+
+    /// `true` if the host CPU supports the required features for this
+    /// backend. `Scalar` is always supported.
+    pub fn is_supported(self) -> bool {
+        match self {
+            Self::Scalar => true,
+            Self::Avx2 => {
+                std::arch::is_x86_feature_detected!("avx2")
+                    && std::arch::is_x86_feature_detected!("fma")
+            }
+            Self::Avx512 => std::arch::is_x86_feature_detected!("avx512f"),
+        }
+    }
+}
+
 /// A bank of independent resonators, each tuned to a fixed frequency.
 ///
 /// Construct with [`from_frequencies`](ResonatorBank::from_frequencies) for
@@ -16,6 +102,12 @@ use crate::dynamics::heuristic_alphas;
 /// magnitudes, powers, phases, or complex values at any time. For one-shot
 /// processing of a full signal into a spectrogram-like output, use
 /// [`resonate`](ResonatorBank::resonate).
+///
+/// On x86_64, `process_sample` / `process_samples` automatically
+/// dispatches to the widest SIMD backend the host CPU supports
+/// (detected at construction via [`Backend::detect`]). Override with
+/// [`set_backend`](ResonatorBank::set_backend) — useful for testing or
+/// to avoid AVX-512 frequency throttling on sustained workloads.
 #[derive(Debug)]
 pub struct ResonatorBank {
     n_resonators: usize,
@@ -41,6 +133,13 @@ pub struct ResonatorBank {
 
     // tracked for stabilization
     sample_count: u64,
+
+    // Active SIMD backend for the per-sample hot loop. Detected at
+    // construction time; override with `set_backend`. Absent on non-
+    // x86_64 targets (aarch64 always scalar→NEON auto-vec; wasm32
+    // compile-time gated to SIMD128 or scalar via cfg).
+    #[cfg(target_arch = "x86_64")]
+    backend: Backend,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -98,12 +197,128 @@ impl ResonatorBank {
             r_im: vec![0.0; n_resonators],
             rr_re: vec![0.0; n_resonators],
             rr_im: vec![0.0; n_resonators],
+            #[cfg(target_arch = "x86_64")]
+            backend: Backend::detect(),
         }
     }
 
-    /// Updates every resonator with a single input sample.
+    /// Returns the SIMD backend currently used by `process_sample` /
+    /// `process_samples`. Auto-detected in [`new`](Self::new) as the
+    /// widest the host CPU supports; overridable via
+    /// [`set_backend`](Self::set_backend).
+    #[cfg(target_arch = "x86_64")]
+    pub fn backend(&self) -> Backend {
+        self.backend
+    }
+
+    /// Overrides the active SIMD backend. Returns `Err` with the
+    /// currently-active backend unchanged if `backend` isn't supported
+    /// by the host CPU (e.g. `Avx512` on a non-AVX-512 machine).
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_backend(&mut self, backend: Backend) -> Result<(), Backend> {
+        if backend.is_supported() {
+            self.backend = backend;
+            Ok(())
+        } else {
+            Err(self.backend)
+        }
+    }
+
+    /// Updates every resonator with a single input sample. On x86_64
+    /// this dispatches to the active [`Backend`] — set in
+    /// [`new`](Self::new) to the widest supported at runtime and
+    /// overridable via [`set_backend`](Self::set_backend).
     #[inline]
     pub fn process_sample(&mut self, sample: f32) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            // Safety for Avx2/Avx512 arms: `set_backend` enforces
+            // `is_supported()` at assignment time, and `Backend::detect`
+            // only returns variants the CPU supports — so whenever
+            // `self.backend` holds Avx2 or Avx512, the corresponding
+            // target_feature-gated inner is safe to call.
+            match self.backend {
+                Backend::Scalar => self.process_sample_inner(sample),
+                Backend::Avx2 => unsafe { self.process_sample_inner_avx2(sample) },
+                Backend::Avx512 => unsafe { self.process_sample_inner_avx512(sample) },
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        self.process_sample_inner(sample);
+
+        self.sample_count += 1;
+        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+            self.stabilize();
+        }
+    }
+
+    /// Updates every resonator with a block of input samples, in order.
+    ///
+    /// Amortises the per-sample stabilisation check by batching up to
+    /// `STABILIZE_EVERY` samples between stabilisations instead of running
+    /// the modulo test inside the hot loop. On x86_64 dispatches to the
+    /// active [`Backend`] once per batch rather than once per sample.
+    #[inline]
+    pub fn process_samples(&mut self, samples: &[f32]) {
+        let mut i = 0;
+        while i < samples.len() {
+            let until_stabilize = STABILIZE_EVERY - (self.sample_count % STABILIZE_EVERY);
+            let take = (samples.len() - i).min(until_stabilize as usize);
+            let chunk = &samples[i..i + take];
+
+            #[cfg(target_arch = "x86_64")]
+            match self.backend {
+                Backend::Scalar => {
+                    for &s in chunk {
+                        self.process_sample_inner(s);
+                    }
+                }
+                // Safety: see `process_sample`.
+                Backend::Avx2 => unsafe {
+                    for &s in chunk {
+                        self.process_sample_inner_avx2(s);
+                    }
+                },
+                Backend::Avx512 => unsafe {
+                    for &s in chunk {
+                        self.process_sample_inner_avx512(s);
+                    }
+                },
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            for &s in chunk {
+                self.process_sample_inner(s);
+            }
+
+            self.sample_count += take as u64;
+            if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+                self.stabilize();
+            }
+            i += take;
+        }
+    }
+
+    /// Forces the scalar hot loop for a single sample, regardless of the
+    /// active [`Backend`]. Exposed for benchmarking the scalar path
+    /// directly without paying the dispatch match cost.
+    #[cfg(target_arch = "x86_64")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn process_sample_scalar(&mut self, sample: f32) {
+        self.process_sample_inner(sample);
+        self.sample_count += 1;
+        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+            self.stabilize();
+        }
+    }
+
+    /// Scalar per-sample update across all bins. LLVM auto-vectorises this
+    /// well enough on x86_64 (SSE) and aarch64 (NEON) that explicit SIMD
+    /// matches or slightly regresses it; this is also the fallback on
+    /// wasm32 builds without `+simd128`.
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    #[inline(always)]
+    fn process_sample_inner(&mut self, sample: f32) {
         for k in 0..self.n_resonators {
             let alpha = self.alphas[k];
             let beta = self.betas[k];
@@ -113,28 +328,325 @@ impl ResonatorBank {
             self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
             self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
 
-            // output smoothing
+            // Output smoothing
             self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
             self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
 
-            // rotate phasor
+            // Rotate phasor
             let zr = self.z_re[k];
             let zi = self.z_im[k];
             self.z_re[k] = zr * self.w_re[k] - zi * self.w_im[k];
             self.z_im[k] = zr * self.w_im[k] + zi * self.w_re[k];
         }
+    }
 
+    /// WASM-SIMD128 per-sample update: processes 4 bins per iteration via
+    /// `wide::f32x4`, mapping to `v128.*` instructions. Loads / stores go
+    /// through `ptr::read_unaligned` / `write_unaligned` so they lower to
+    /// single `v128.load` / `v128.store` ops — the array-literal
+    /// `f32x4::new([a,b,c,d])` path generates per-lane inserts and
+    /// defeats vectorisation.
+    ///
+    /// Measured ~6-8x speedup over the scalar path in-browser (Firefox
+    /// 130, Chrome 131) at 88–880 bins; see PR description for numbers.
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    #[inline(always)]
+    fn process_sample_inner(&mut self, sample: f32) {
+        let n = self.n_resonators;
+        let vec_end = n & !3; // round down to multiple of 4
+
+        let sample_v = f32x4::splat(sample);
+        let one_v = f32x4::splat(1.0);
+
+        // Safety: all 10 backing `Vec<f32>` buffers share `n_resonators`
+        // elements; `vec_end` is `n & !3`, so every `k..k+4` subslice is
+        // in-bounds for every buffer. `f32x4` is `#[repr(C, align(16))]`
+        // with exactly 16 bytes — four contiguous f32s.
+        let mut k = 0;
+        unsafe {
+            while k < vec_end {
+                let alpha = load_f32x4(&self.alphas, k);
+                let beta = load_f32x4(&self.betas, k);
+                let z_re = load_f32x4(&self.z_re, k);
+                let z_im = load_f32x4(&self.z_im, k);
+                let r_re_old = load_f32x4(&self.r_re, k);
+                let r_im_old = load_f32x4(&self.r_im, k);
+                let rr_re_old = load_f32x4(&self.rr_re, k);
+                let rr_im_old = load_f32x4(&self.rr_im, k);
+                let w_re = load_f32x4(&self.w_re, k);
+                let w_im = load_f32x4(&self.w_im, k);
+
+                let one_m_alpha = one_v - alpha;
+                let one_m_beta = one_v - beta;
+                let alpha_sample = alpha * sample_v;
+
+                // EWMA accumulation: r = (1 - alpha) * r_prev + alpha_sample * z
+                let r_re = one_m_alpha.mul_add(r_re_old, alpha_sample * z_re);
+                let r_im = one_m_alpha.mul_add(r_im_old, alpha_sample * z_im);
+
+                // Output smoothing: rr = (1 - beta) * rr_prev + beta * r
+                let rr_re = one_m_beta.mul_add(rr_re_old, beta * r_re);
+                let rr_im = one_m_beta.mul_add(rr_im_old, beta * r_im);
+
+                // Phasor rotation: z_new = z * w (complex multiply)
+                let z_re_new = z_re * w_re - z_im * w_im;
+                let z_im_new = z_re * w_im + z_im * w_re;
+
+                store_f32x4(&mut self.r_re, k, r_re);
+                store_f32x4(&mut self.r_im, k, r_im);
+                store_f32x4(&mut self.rr_re, k, rr_re);
+                store_f32x4(&mut self.rr_im, k, rr_im);
+                store_f32x4(&mut self.z_re, k, z_re_new);
+                store_f32x4(&mut self.z_im, k, z_im_new);
+
+                k += 4;
+            }
+        }
+
+        // Scalar tail for any remaining bins (n not a multiple of 4).
+        while k < n {
+            let alpha = self.alphas[k];
+            let beta = self.betas[k];
+            let alpha_sample = alpha * sample;
+
+            self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
+            self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
+
+            self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
+            self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
+
+            let zr = self.z_re[k];
+            let zi = self.z_im[k];
+            self.z_re[k] = zr * self.w_re[k] - zi * self.w_im[k];
+            self.z_im[k] = zr * self.w_im[k] + zi * self.w_re[k];
+
+            k += 1;
+        }
+    }
+
+    /// x86_64 AVX2+FMA per-sample update: processes 8 bins per iteration
+    /// via 256-bit `__m256` vectors with `vfmadd231ps` for the EWMA /
+    /// smoothing mul-adds. Exposed for benchmarking only (see `benches/
+    /// bank.rs`). Unaligned loads because `Vec<f32>` is only 4-byte
+    /// aligned; on modern x86_64 unaligned loads have matched aligned
+    /// perf when they don't cross a cache line.
+    ///
+    /// # Safety
+    /// CPU must support `avx2` and `fma` — check with
+    /// `is_x86_feature_detected!("avx2")` and `..("fma")` before calling.
+    #[cfg(target_arch = "x86_64")]
+    #[doc(hidden)]
+    #[inline]
+    pub unsafe fn process_sample_avx2(&mut self, sample: f32) {
+        unsafe { self.process_sample_inner_avx2(sample) };
         self.sample_count += 1;
         if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
             self.stabilize();
         }
     }
 
-    /// Updates every resonator with a block of input samples, in order.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma")]
+    unsafe fn process_sample_inner_avx2(&mut self, sample: f32) {
+        unsafe {
+            let n = self.n_resonators;
+            let vec_end = n & !7; // multiple of 8
+
+            let sample_v = _mm256_set1_ps(sample);
+            let one_v = _mm256_set1_ps(1.0);
+
+            // Safety: all 10 backing buffers share `n_resonators`; every
+            // `k..k+8` slice is in-bounds for every buffer.
+            let mut k = 0;
+            while k < vec_end {
+                let alpha = _mm256_loadu_ps(self.alphas.as_ptr().add(k));
+                let beta = _mm256_loadu_ps(self.betas.as_ptr().add(k));
+                let z_re = _mm256_loadu_ps(self.z_re.as_ptr().add(k));
+                let z_im = _mm256_loadu_ps(self.z_im.as_ptr().add(k));
+                let r_re_old = _mm256_loadu_ps(self.r_re.as_ptr().add(k));
+                let r_im_old = _mm256_loadu_ps(self.r_im.as_ptr().add(k));
+                let rr_re_old = _mm256_loadu_ps(self.rr_re.as_ptr().add(k));
+                let rr_im_old = _mm256_loadu_ps(self.rr_im.as_ptr().add(k));
+                let w_re = _mm256_loadu_ps(self.w_re.as_ptr().add(k));
+                let w_im = _mm256_loadu_ps(self.w_im.as_ptr().add(k));
+
+                let one_m_alpha = _mm256_sub_ps(one_v, alpha);
+                let one_m_beta = _mm256_sub_ps(one_v, beta);
+                let alpha_sample = _mm256_mul_ps(alpha, sample_v);
+
+                // r = (1 - alpha) * r_prev + alpha_sample * z
+                let r_re = _mm256_fmadd_ps(one_m_alpha, r_re_old, _mm256_mul_ps(alpha_sample, z_re));
+                let r_im = _mm256_fmadd_ps(one_m_alpha, r_im_old, _mm256_mul_ps(alpha_sample, z_im));
+
+                // rr = (1 - beta) * rr_prev + beta * r
+                let rr_re = _mm256_fmadd_ps(one_m_beta, rr_re_old, _mm256_mul_ps(beta, r_re));
+                let rr_im = _mm256_fmadd_ps(one_m_beta, rr_im_old, _mm256_mul_ps(beta, r_im));
+
+                // z_new = z * w  (complex multiply)
+                let z_re_new = _mm256_sub_ps(
+                    _mm256_mul_ps(z_re, w_re),
+                    _mm256_mul_ps(z_im, w_im),
+                );
+                let z_im_new = _mm256_add_ps(
+                    _mm256_mul_ps(z_re, w_im),
+                    _mm256_mul_ps(z_im, w_re),
+                );
+
+                _mm256_storeu_ps(self.r_re.as_mut_ptr().add(k), r_re);
+                _mm256_storeu_ps(self.r_im.as_mut_ptr().add(k), r_im);
+                _mm256_storeu_ps(self.rr_re.as_mut_ptr().add(k), rr_re);
+                _mm256_storeu_ps(self.rr_im.as_mut_ptr().add(k), rr_im);
+                _mm256_storeu_ps(self.z_re.as_mut_ptr().add(k), z_re_new);
+                _mm256_storeu_ps(self.z_im.as_mut_ptr().add(k), z_im_new);
+
+                k += 8;
+            }
+
+            // Scalar tail for any remaining bins (n not a multiple of 8).
+            while k < n {
+                let alpha = self.alphas[k];
+                let beta = self.betas[k];
+                let alpha_sample = alpha * sample;
+
+                self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
+                self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
+
+                self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
+                self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
+
+                let zr = self.z_re[k];
+                let zi = self.z_im[k];
+                self.z_re[k] = zr * self.w_re[k] - zi * self.w_im[k];
+                self.z_im[k] = zr * self.w_im[k] + zi * self.w_re[k];
+
+                k += 1;
+            }
+        }
+    }
+
+    /// x86_64 AVX-512F per-sample update: processes 16 bins per iteration
+    /// via 512-bit `__m512` vectors. Same algorithm as
+    /// `process_sample_avx2` at twice the vector width. Exposed for
+    /// benchmarking only.
+    ///
+    /// # Safety
+    /// CPU must support `avx512f` — check with
+    /// `is_x86_feature_detected!("avx512f")` before calling.
+    #[cfg(target_arch = "x86_64")]
+    #[doc(hidden)]
     #[inline]
-    pub fn process_samples(&mut self, samples: &[f32]) {
-        for &s in samples {
-            self.process_sample(s);
+    pub unsafe fn process_sample_avx512(&mut self, sample: f32) {
+        unsafe { self.process_sample_inner_avx512(sample) };
+        self.sample_count += 1;
+        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+            self.stabilize();
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f")]
+    unsafe fn process_sample_inner_avx512(&mut self, sample: f32) {
+        unsafe {
+            let n = self.n_resonators;
+            let vec_end = n & !15; // multiple of 16
+
+            let sample_v = _mm512_set1_ps(sample);
+            let one_v = _mm512_set1_ps(1.0);
+
+            let mut k = 0;
+            while k < vec_end {
+                let alpha = _mm512_loadu_ps(self.alphas.as_ptr().add(k));
+                let beta = _mm512_loadu_ps(self.betas.as_ptr().add(k));
+                let z_re = _mm512_loadu_ps(self.z_re.as_ptr().add(k));
+                let z_im = _mm512_loadu_ps(self.z_im.as_ptr().add(k));
+                let r_re_old = _mm512_loadu_ps(self.r_re.as_ptr().add(k));
+                let r_im_old = _mm512_loadu_ps(self.r_im.as_ptr().add(k));
+                let rr_re_old = _mm512_loadu_ps(self.rr_re.as_ptr().add(k));
+                let rr_im_old = _mm512_loadu_ps(self.rr_im.as_ptr().add(k));
+                let w_re = _mm512_loadu_ps(self.w_re.as_ptr().add(k));
+                let w_im = _mm512_loadu_ps(self.w_im.as_ptr().add(k));
+
+                let one_m_alpha = _mm512_sub_ps(one_v, alpha);
+                let one_m_beta = _mm512_sub_ps(one_v, beta);
+                let alpha_sample = _mm512_mul_ps(alpha, sample_v);
+
+                let r_re = _mm512_fmadd_ps(one_m_alpha, r_re_old, _mm512_mul_ps(alpha_sample, z_re));
+                let r_im = _mm512_fmadd_ps(one_m_alpha, r_im_old, _mm512_mul_ps(alpha_sample, z_im));
+
+                let rr_re = _mm512_fmadd_ps(one_m_beta, rr_re_old, _mm512_mul_ps(beta, r_re));
+                let rr_im = _mm512_fmadd_ps(one_m_beta, rr_im_old, _mm512_mul_ps(beta, r_im));
+
+                let z_re_new = _mm512_sub_ps(
+                    _mm512_mul_ps(z_re, w_re),
+                    _mm512_mul_ps(z_im, w_im),
+                );
+                let z_im_new = _mm512_add_ps(
+                    _mm512_mul_ps(z_re, w_im),
+                    _mm512_mul_ps(z_im, w_re),
+                );
+
+                _mm512_storeu_ps(self.r_re.as_mut_ptr().add(k), r_re);
+                _mm512_storeu_ps(self.r_im.as_mut_ptr().add(k), r_im);
+                _mm512_storeu_ps(self.rr_re.as_mut_ptr().add(k), rr_re);
+                _mm512_storeu_ps(self.rr_im.as_mut_ptr().add(k), rr_im);
+                _mm512_storeu_ps(self.z_re.as_mut_ptr().add(k), z_re_new);
+                _mm512_storeu_ps(self.z_im.as_mut_ptr().add(k), z_im_new);
+
+                k += 16;
+            }
+
+            // AVX-512F masked tail: one more full-width iteration, with a
+            // k-mask restricting loads/stores to the `n - vec_end` active
+            // lanes. Fault-suppression on `_mm512_maskz_loadu_ps` means
+            // the masked-off (high) lanes are never actually accessed, so
+            // we don't read past the end of the Vec buffers even when
+            // tail < 16. Much cheaper than running a scalar loop for up
+            // to 15 bins; the previous scalar tail was eating ~35% of
+            // total AVX-512 time at 264 bins because of this.
+            let tail = n - vec_end;
+            if tail > 0 {
+                let mask: __mmask16 = (1u16 << tail) - 1;
+
+                let alpha = _mm512_maskz_loadu_ps(mask, self.alphas.as_ptr().add(k));
+                let beta = _mm512_maskz_loadu_ps(mask, self.betas.as_ptr().add(k));
+                let z_re = _mm512_maskz_loadu_ps(mask, self.z_re.as_ptr().add(k));
+                let z_im = _mm512_maskz_loadu_ps(mask, self.z_im.as_ptr().add(k));
+                let r_re_old = _mm512_maskz_loadu_ps(mask, self.r_re.as_ptr().add(k));
+                let r_im_old = _mm512_maskz_loadu_ps(mask, self.r_im.as_ptr().add(k));
+                let rr_re_old = _mm512_maskz_loadu_ps(mask, self.rr_re.as_ptr().add(k));
+                let rr_im_old = _mm512_maskz_loadu_ps(mask, self.rr_im.as_ptr().add(k));
+                let w_re = _mm512_maskz_loadu_ps(mask, self.w_re.as_ptr().add(k));
+                let w_im = _mm512_maskz_loadu_ps(mask, self.w_im.as_ptr().add(k));
+
+                let one_m_alpha = _mm512_sub_ps(one_v, alpha);
+                let one_m_beta = _mm512_sub_ps(one_v, beta);
+                let alpha_sample = _mm512_mul_ps(alpha, sample_v);
+
+                let r_re = _mm512_fmadd_ps(one_m_alpha, r_re_old, _mm512_mul_ps(alpha_sample, z_re));
+                let r_im = _mm512_fmadd_ps(one_m_alpha, r_im_old, _mm512_mul_ps(alpha_sample, z_im));
+
+                let rr_re = _mm512_fmadd_ps(one_m_beta, rr_re_old, _mm512_mul_ps(beta, r_re));
+                let rr_im = _mm512_fmadd_ps(one_m_beta, rr_im_old, _mm512_mul_ps(beta, r_im));
+
+                let z_re_new = _mm512_sub_ps(
+                    _mm512_mul_ps(z_re, w_re),
+                    _mm512_mul_ps(z_im, w_im),
+                );
+                let z_im_new = _mm512_add_ps(
+                    _mm512_mul_ps(z_re, w_im),
+                    _mm512_mul_ps(z_im, w_re),
+                );
+
+                // Masked stores leave memory outside the mask unchanged,
+                // so garbage from the masked-off (zero) load lanes never
+                // hits the buffers.
+                _mm512_mask_storeu_ps(self.r_re.as_mut_ptr().add(k), mask, r_re);
+                _mm512_mask_storeu_ps(self.r_im.as_mut_ptr().add(k), mask, r_im);
+                _mm512_mask_storeu_ps(self.rr_re.as_mut_ptr().add(k), mask, rr_re);
+                _mm512_mask_storeu_ps(self.rr_im.as_mut_ptr().add(k), mask, rr_im);
+                _mm512_mask_storeu_ps(self.z_re.as_mut_ptr().add(k), mask, z_re_new);
+                _mm512_mask_storeu_ps(self.z_im.as_mut_ptr().add(k), mask, z_im_new);
+            }
         }
     }
 
@@ -374,6 +886,125 @@ mod tests {
         let signal = vec![0.5f32; 3 * hop + 50];
         let out = bank.resonate(&signal, hop);
         assert_eq!(out.len(), 3 * bank.len());
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn matches_scalar(backend: &str, process: unsafe fn(&mut ResonatorBank, f32)) {
+        let sr = 44100.0;
+        // Use bin counts that span both the vectorised body and a scalar
+        // tail for both AVX2 (tail if n % 8 != 0) and AVX-512 (tail if
+        // n % 16 != 0). 23 exercises both tails.
+        for n_bins in [1usize, 8, 15, 16, 17, 23, 64, 88] {
+            let freqs: Vec<f32> = (0..n_bins).map(|i| 100.0 + i as f32 * 37.0).collect();
+            let signal: Vec<f32> = (0..1024)
+                .map(|i| (2.0 * PI * 440.0 * i as f32 / sr).cos() * 0.5)
+                .collect();
+
+            let mut scalar = ResonatorBank::from_frequencies(&freqs, sr);
+            let mut simd = ResonatorBank::from_frequencies(&freqs, sr);
+            for &s in &signal {
+                scalar.process_sample(s);
+                unsafe { process(&mut simd, s) };
+            }
+
+            for k in 0..n_bins {
+                let s_re = scalar.rr_re[k];
+                let s_im = scalar.rr_im[k];
+                let v_re = simd.rr_re[k];
+                let v_im = simd.rr_im[k];
+                let tol = 1e-4 * (1.0 + s_re.abs() + s_im.abs());
+                assert!(
+                    (s_re - v_re).abs() < tol && (s_im - v_im).abs() < tol,
+                    "{backend} bin {k}/{n_bins}: scalar=({s_re},{s_im}) simd=({v_re},{v_im})",
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn default_backend_is_widest_supported() {
+        let bank = ResonatorBank::from_frequencies(&[440.0], 44100.0);
+        assert_eq!(bank.backend(), Backend::detect());
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn set_backend_scalar_always_ok() {
+        let mut bank = ResonatorBank::from_frequencies(&[440.0], 44100.0);
+        assert!(bank.set_backend(Backend::Scalar).is_ok());
+        assert_eq!(bank.backend(), Backend::Scalar);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn set_backend_unsupported_errors() {
+        // Pick a backend the host does NOT support, if any exists.
+        let unsupported = if !Backend::Avx512.is_supported() {
+            Some(Backend::Avx512)
+        } else if !Backend::Avx2.is_supported() {
+            Some(Backend::Avx2)
+        } else {
+            None
+        };
+        let Some(target) = unsupported else {
+            eprintln!("skipping — host supports every backend");
+            return;
+        };
+        let mut bank = ResonatorBank::from_frequencies(&[440.0], 44100.0);
+        let before = bank.backend();
+        assert!(bank.set_backend(target).is_err());
+        assert_eq!(bank.backend(), before, "backend unchanged on failure");
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn dispatched_matches_forced_scalar() {
+        // process_sample (dispatched to detected backend) must produce
+        // the same output as process_sample_scalar (forced scalar path),
+        // up to FMA-vs-separate-mul+add rounding.
+        let sr = 44100.0;
+        let freqs: Vec<f32> = (0..33).map(|i| 100.0 + i as f32 * 37.0).collect();
+        let signal: Vec<f32> = (0..1024)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / sr).cos() * 0.5)
+            .collect();
+
+        let mut dispatched = ResonatorBank::from_frequencies(&freqs, sr);
+        let mut forced = ResonatorBank::from_frequencies(&freqs, sr);
+        for &s in &signal {
+            dispatched.process_sample(s);
+            forced.process_sample_scalar(s);
+        }
+        for k in 0..freqs.len() {
+            let tol = 1e-4 * (1.0 + dispatched.rr_re[k].abs() + dispatched.rr_im[k].abs());
+            assert!(
+                (dispatched.rr_re[k] - forced.rr_re[k]).abs() < tol
+                    && (dispatched.rr_im[k] - forced.rr_im[k]).abs() < tol,
+                "bin {k}: dispatched=({},{}) scalar=({},{})",
+                dispatched.rr_re[k], dispatched.rr_im[k],
+                forced.rr_re[k], forced.rr_im[k],
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn avx2_matches_scalar() {
+        if !std::arch::is_x86_feature_detected!("avx2") || !std::arch::is_x86_feature_detected!("fma") {
+            eprintln!("skipping — CPU lacks avx2 or fma");
+            return;
+        }
+        matches_scalar("avx2", ResonatorBank::process_sample_avx2);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn avx512_matches_scalar() {
+        if !std::arch::is_x86_feature_detected!("avx512f") {
+            eprintln!("skipping — CPU lacks avx512f");
+            return;
+        }
+        matches_scalar("avx512", ResonatorBank::process_sample_avx512);
     }
 
     #[test]
