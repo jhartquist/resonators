@@ -1,4 +1,5 @@
 use std::hint::black_box;
+use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use resonators::{ResonatorBank, ResonatorConfig, heuristic_alpha, midi_to_hz};
@@ -36,6 +37,10 @@ fn bench_bank(c: &mut Criterion) {
         let mut group = c.benchmark_group("bank/scalar");
         group.throughput(Throughput::Elements(n as u64));
         group.sample_size(50);
+        // 10 s covers the largest bin count (880, ~17 ms/iter × 50
+        // samples ≈ 0.9 s + warmup) with headroom, so criterion won't
+        // warn about missed sample budget at any of the benched sizes.
+        group.measurement_time(Duration::from_secs(10));
 
         for &n_bins in BIN_COUNTS {
             let configs = log_spaced_configs(n_bins);
