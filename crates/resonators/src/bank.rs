@@ -104,26 +104,7 @@ impl ResonatorBank {
     /// Updates every resonator with a single input sample.
     #[inline]
     pub fn process_sample(&mut self, sample: f32) {
-        for k in 0..self.n_resonators {
-            let alpha = self.alphas[k];
-            let beta = self.betas[k];
-            let alpha_sample = alpha * sample;
-
-            // EWMA accumulation
-            self.r_re[k] = (1.0 - alpha).mul_add(self.r_re[k], alpha_sample * self.z_re[k]);
-            self.r_im[k] = (1.0 - alpha).mul_add(self.r_im[k], alpha_sample * self.z_im[k]);
-
-            // output smoothing
-            self.rr_re[k] = (1.0 - beta).mul_add(self.rr_re[k], beta * self.r_re[k]);
-            self.rr_im[k] = (1.0 - beta).mul_add(self.rr_im[k], beta * self.r_im[k]);
-
-            // rotate phasor
-            let zr = self.z_re[k];
-            let zi = self.z_im[k];
-            self.z_re[k] = zr * self.w_re[k] - zi * self.w_im[k];
-            self.z_im[k] = zr * self.w_im[k] + zi * self.w_re[k];
-        }
-
+        self.process_sample_inner(sample);
         self.sample_count += 1;
         if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
             self.stabilize();
@@ -133,9 +114,62 @@ impl ResonatorBank {
     /// Updates every resonator with a block of input samples, in order.
     #[inline]
     pub fn process_samples(&mut self, samples: &[f32]) {
-        for &s in samples {
-            self.process_sample(s);
+        let mut remaining = samples;
+        while !remaining.is_empty() {
+            let chunk_len = remaining.len().min(self.samples_until_stabilize());
+            let (chunk, rest) = remaining.split_at(chunk_len);
+
+            for &sample in chunk {
+                self.process_sample_inner(sample);
+            }
+
+            self.sample_count += chunk_len as u64;
+            if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+                self.stabilize();
+            }
+            remaining = rest;
         }
+    }
+
+    #[inline(always)]
+    fn process_sample_inner(&mut self, sample: f32) {
+        // hoisted to locals so LLVM can drop bounds checks and vectorize cleanly.
+        let n = self.n_resonators;
+        let alphas = &self.alphas[..n];
+        let betas = &self.betas[..n];
+        let w_re = &self.w_re[..n];
+        let w_im = &self.w_im[..n];
+        let r_re = &mut self.r_re[..n];
+        let r_im = &mut self.r_im[..n];
+        let rr_re = &mut self.rr_re[..n];
+        let rr_im = &mut self.rr_im[..n];
+        let z_re = &mut self.z_re[..n];
+        let z_im = &mut self.z_im[..n];
+
+        for k in 0..n {
+            let alpha = alphas[k];
+            let beta = betas[k];
+            let alpha_sample = alpha * sample;
+
+            // EWMA accumulation
+            r_re[k] = mul_add(1.0 - alpha, r_re[k], alpha_sample * z_re[k]);
+            r_im[k] = mul_add(1.0 - alpha, r_im[k], alpha_sample * z_im[k]);
+
+            // output smoothing
+            rr_re[k] = mul_add(1.0 - beta, rr_re[k], beta * r_re[k]);
+            rr_im[k] = mul_add(1.0 - beta, rr_im[k], beta * r_im[k]);
+
+            // rotate phasor
+            let zr = z_re[k];
+            let zi = z_im[k];
+            z_re[k] = zr * w_re[k] - zi * w_im[k];
+            z_im[k] = zr * w_im[k] + zi * w_re[k];
+        }
+    }
+
+    fn samples_until_stabilize(&self) -> usize {
+        let offset = (self.sample_count % STABILIZE_EVERY) as usize;
+        STABILIZE_EVERY as usize - offset
     }
 
     /// Processes `signal` in hops and returns the complex state of every
@@ -228,6 +262,19 @@ impl ResonatorBank {
     /// Returns the current power of every bin.
     pub fn powers(&self) -> Vec<f32> {
         (0..self.n_resonators).map(|i| self.power(i)).collect()
+    }
+}
+
+// Unfused on wasm32+simd128: `f32::mul_add` kills autovectorization there.
+#[inline(always)]
+fn mul_add(a: f32, b: f32, c: f32) -> f32 {
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        a * b + c
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    {
+        a.mul_add(b, c)
     }
 }
 
