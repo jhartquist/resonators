@@ -30,9 +30,12 @@ fn bench_bank(c: &mut Criterion) {
         .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / SAMPLE_RATE).sin())
         .collect();
 
-    // Scalar path — on x86_64 with -C target-cpu=native or equivalent,
-    // LLVM will auto-vectorise this to whatever the build target
-    // supports (SSE2 baseline, AVX2 if enabled, etc).
+    // Scalar path — forced via process_sample_scalar to bypass the
+    // x86_64 runtime-dispatch match, so the measurement reflects the
+    // scalar hot loop only. On non-x86 targets `process_sample` has no
+    // dispatch so we call it directly; on x86_64 LLVM auto-vectorises
+    // the scalar loop to whatever target-cpu supports (SSE2 baseline,
+    // AVX2/AVX-512 if enabled).
     {
         let mut group = c.benchmark_group("bank/scalar");
         group.throughput(Throughput::Elements(n as u64));
@@ -52,6 +55,9 @@ fn bench_bank(c: &mut Criterion) {
                     bencher.iter(|| {
                         bank.reset();
                         for &sample in &signal {
+                            #[cfg(target_arch = "x86_64")]
+                            bank.process_sample_scalar(black_box(sample));
+                            #[cfg(not(target_arch = "x86_64"))]
                             bank.process_sample(black_box(sample));
                         }
                     });
@@ -61,6 +67,39 @@ fn bench_bank(c: &mut Criterion) {
         group.finish();
     }
 
+    // Runtime-dispatched path — `ResonatorBank::new` picks the widest
+    // supported backend, then `process_sample` does a per-call match
+    // and dispatches. The interesting measurement is the delta vs the
+    // forced `bank/avx512` (or `bank/avx2` on hosts without AVX-512):
+    // that's the cost of the dispatch match. Expected near-zero
+    // because the branch is predictable and set once at construction.
+    #[cfg(target_arch = "x86_64")]
+    {
+        let mut group = c.benchmark_group("bank/dispatch");
+        group.throughput(Throughput::Elements(n as u64));
+        group.sample_size(50);
+        group.measurement_time(Duration::from_secs(10));
+
+        for &n_bins in BIN_COUNTS {
+            let configs = log_spaced_configs(n_bins);
+            group.bench_with_input(
+                BenchmarkId::from_parameter(n_bins),
+                &configs,
+                |bencher, configs| {
+                    let mut bank = ResonatorBank::new(configs, SAMPLE_RATE);
+                    bencher.iter(|| {
+                        bank.reset();
+                        for &sample in &signal {
+                            bank.process_sample(black_box(sample));
+                        }
+                    });
+                },
+            );
+        }
+        group.finish();
+        eprintln!("bank/dispatch backend = {:?}", resonators::Backend::detect());
+    }
+
     // Explicit AVX2 + FMA — 8 bins per iteration via __m256 + vfmadd231ps.
     #[cfg(target_arch = "x86_64")]
     {
@@ -68,6 +107,7 @@ fn bench_bank(c: &mut Criterion) {
             let mut group = c.benchmark_group("bank/avx2");
             group.throughput(Throughput::Elements(n as u64));
             group.sample_size(50);
+            group.measurement_time(Duration::from_secs(10));
 
             for &n_bins in BIN_COUNTS {
                 let configs = log_spaced_configs(n_bins);
@@ -101,6 +141,7 @@ fn bench_bank(c: &mut Criterion) {
             let mut group = c.benchmark_group("bank/avx512");
             group.throughput(Throughput::Elements(n as u64));
             group.sample_size(50);
+            group.measurement_time(Duration::from_secs(10));
 
             for &n_bins in BIN_COUNTS {
                 let configs = log_spaced_configs(n_bins);

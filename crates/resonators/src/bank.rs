@@ -45,6 +45,53 @@ unsafe fn store_f32x4(buf: &mut [f32], offset: usize, value: f32x4) {
     }
 }
 
+/// Which SIMD backend `ResonatorBank` uses for the per-sample hot loop.
+/// `Scalar` is always available; `Avx2` and `Avx512` require the
+/// corresponding CPU features. [`Backend::detect`] picks the widest
+/// variant the host supports at runtime.
+#[cfg(target_arch = "x86_64")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Backend {
+    /// Pure scalar loop — LLVM auto-vectorises as the build target
+    /// allows. Always available.
+    Scalar,
+    /// Explicit AVX2 + FMA — 8 bins per iteration via `__m256`.
+    /// Requires `avx2` and `fma` CPU features.
+    Avx2,
+    /// Explicit AVX-512F with masked tail — 16 bins per iteration via
+    /// `__m512`. Requires `avx512f` CPU feature.
+    Avx512,
+}
+
+#[cfg(target_arch = "x86_64")]
+impl Backend {
+    /// Returns the widest backend the host CPU supports at runtime.
+    pub fn detect() -> Self {
+        if std::arch::is_x86_feature_detected!("avx512f") {
+            Self::Avx512
+        } else if std::arch::is_x86_feature_detected!("avx2")
+            && std::arch::is_x86_feature_detected!("fma")
+        {
+            Self::Avx2
+        } else {
+            Self::Scalar
+        }
+    }
+
+    /// `true` if the host CPU supports the required features for this
+    /// backend. `Scalar` is always supported.
+    pub fn is_supported(self) -> bool {
+        match self {
+            Self::Scalar => true,
+            Self::Avx2 => {
+                std::arch::is_x86_feature_detected!("avx2")
+                    && std::arch::is_x86_feature_detected!("fma")
+            }
+            Self::Avx512 => std::arch::is_x86_feature_detected!("avx512f"),
+        }
+    }
+}
+
 /// A bank of independent resonators, each tuned to a fixed frequency.
 ///
 /// Construct with [`from_frequencies`](ResonatorBank::from_frequencies) for
@@ -55,6 +102,12 @@ unsafe fn store_f32x4(buf: &mut [f32], offset: usize, value: f32x4) {
 /// magnitudes, powers, phases, or complex values at any time. For one-shot
 /// processing of a full signal into a spectrogram-like output, use
 /// [`resonate`](ResonatorBank::resonate).
+///
+/// On x86_64, `process_sample` / `process_samples` automatically
+/// dispatches to the widest SIMD backend the host CPU supports
+/// (detected at construction via [`Backend::detect`]). Override with
+/// [`set_backend`](ResonatorBank::set_backend) — useful for testing or
+/// to avoid AVX-512 frequency throttling on sustained workloads.
 #[derive(Debug)]
 pub struct ResonatorBank {
     n_resonators: usize,
@@ -80,6 +133,13 @@ pub struct ResonatorBank {
 
     // tracked for stabilization
     sample_count: u64,
+
+    // Active SIMD backend for the per-sample hot loop. Detected at
+    // construction time; override with `set_backend`. Absent on non-
+    // x86_64 targets (aarch64 always scalar→NEON auto-vec; wasm32
+    // compile-time gated to SIMD128 or scalar via cfg).
+    #[cfg(target_arch = "x86_64")]
+    backend: Backend,
 }
 
 #[allow(clippy::len_without_is_empty)]
@@ -137,13 +197,55 @@ impl ResonatorBank {
             r_im: vec![0.0; n_resonators],
             rr_re: vec![0.0; n_resonators],
             rr_im: vec![0.0; n_resonators],
+            #[cfg(target_arch = "x86_64")]
+            backend: Backend::detect(),
         }
     }
 
-    /// Updates every resonator with a single input sample.
+    /// Returns the SIMD backend currently used by `process_sample` /
+    /// `process_samples`. Auto-detected in [`new`](Self::new) as the
+    /// widest the host CPU supports; overridable via
+    /// [`set_backend`](Self::set_backend).
+    #[cfg(target_arch = "x86_64")]
+    pub fn backend(&self) -> Backend {
+        self.backend
+    }
+
+    /// Overrides the active SIMD backend. Returns `Err` with the
+    /// currently-active backend unchanged if `backend` isn't supported
+    /// by the host CPU (e.g. `Avx512` on a non-AVX-512 machine).
+    #[cfg(target_arch = "x86_64")]
+    pub fn set_backend(&mut self, backend: Backend) -> Result<(), Backend> {
+        if backend.is_supported() {
+            self.backend = backend;
+            Ok(())
+        } else {
+            Err(self.backend)
+        }
+    }
+
+    /// Updates every resonator with a single input sample. On x86_64
+    /// this dispatches to the active [`Backend`] — set in
+    /// [`new`](Self::new) to the widest supported at runtime and
+    /// overridable via [`set_backend`](Self::set_backend).
     #[inline]
     pub fn process_sample(&mut self, sample: f32) {
+        #[cfg(target_arch = "x86_64")]
+        {
+            // Safety for Avx2/Avx512 arms: `set_backend` enforces
+            // `is_supported()` at assignment time, and `Backend::detect`
+            // only returns variants the CPU supports — so whenever
+            // `self.backend` holds Avx2 or Avx512, the corresponding
+            // target_feature-gated inner is safe to call.
+            match self.backend {
+                Backend::Scalar => self.process_sample_inner(sample),
+                Backend::Avx2 => unsafe { self.process_sample_inner_avx2(sample) },
+                Backend::Avx512 => unsafe { self.process_sample_inner_avx512(sample) },
+            }
+        }
+        #[cfg(not(target_arch = "x86_64"))]
         self.process_sample_inner(sample);
+
         self.sample_count += 1;
         if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
             self.stabilize();
@@ -154,21 +256,59 @@ impl ResonatorBank {
     ///
     /// Amortises the per-sample stabilisation check by batching up to
     /// `STABILIZE_EVERY` samples between stabilisations instead of running
-    /// the modulo test inside the hot loop.
+    /// the modulo test inside the hot loop. On x86_64 dispatches to the
+    /// active [`Backend`] once per batch rather than once per sample.
     #[inline]
     pub fn process_samples(&mut self, samples: &[f32]) {
         let mut i = 0;
         while i < samples.len() {
             let until_stabilize = STABILIZE_EVERY - (self.sample_count % STABILIZE_EVERY);
             let take = (samples.len() - i).min(until_stabilize as usize);
-            for &s in &samples[i..i + take] {
+            let chunk = &samples[i..i + take];
+
+            #[cfg(target_arch = "x86_64")]
+            match self.backend {
+                Backend::Scalar => {
+                    for &s in chunk {
+                        self.process_sample_inner(s);
+                    }
+                }
+                // Safety: see `process_sample`.
+                Backend::Avx2 => unsafe {
+                    for &s in chunk {
+                        self.process_sample_inner_avx2(s);
+                    }
+                },
+                Backend::Avx512 => unsafe {
+                    for &s in chunk {
+                        self.process_sample_inner_avx512(s);
+                    }
+                },
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            for &s in chunk {
                 self.process_sample_inner(s);
             }
+
             self.sample_count += take as u64;
             if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
                 self.stabilize();
             }
             i += take;
+        }
+    }
+
+    /// Forces the scalar hot loop for a single sample, regardless of the
+    /// active [`Backend`]. Exposed for benchmarking the scalar path
+    /// directly without paying the dispatch match cost.
+    #[cfg(target_arch = "x86_64")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn process_sample_scalar(&mut self, sample: f32) {
+        self.process_sample_inner(sample);
+        self.sample_count += 1;
+        if self.sample_count.is_multiple_of(STABILIZE_EVERY) {
+            self.stabilize();
         }
     }
 
@@ -778,6 +918,72 @@ mod tests {
                     "{backend} bin {k}/{n_bins}: scalar=({s_re},{s_im}) simd=({v_re},{v_im})",
                 );
             }
+        }
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn default_backend_is_widest_supported() {
+        let bank = ResonatorBank::from_frequencies(&[440.0], 44100.0);
+        assert_eq!(bank.backend(), Backend::detect());
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn set_backend_scalar_always_ok() {
+        let mut bank = ResonatorBank::from_frequencies(&[440.0], 44100.0);
+        assert!(bank.set_backend(Backend::Scalar).is_ok());
+        assert_eq!(bank.backend(), Backend::Scalar);
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn set_backend_unsupported_errors() {
+        // Pick a backend the host does NOT support, if any exists.
+        let unsupported = if !Backend::Avx512.is_supported() {
+            Some(Backend::Avx512)
+        } else if !Backend::Avx2.is_supported() {
+            Some(Backend::Avx2)
+        } else {
+            None
+        };
+        let Some(target) = unsupported else {
+            eprintln!("skipping — host supports every backend");
+            return;
+        };
+        let mut bank = ResonatorBank::from_frequencies(&[440.0], 44100.0);
+        let before = bank.backend();
+        assert!(bank.set_backend(target).is_err());
+        assert_eq!(bank.backend(), before, "backend unchanged on failure");
+    }
+
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn dispatched_matches_forced_scalar() {
+        // process_sample (dispatched to detected backend) must produce
+        // the same output as process_sample_scalar (forced scalar path),
+        // up to FMA-vs-separate-mul+add rounding.
+        let sr = 44100.0;
+        let freqs: Vec<f32> = (0..33).map(|i| 100.0 + i as f32 * 37.0).collect();
+        let signal: Vec<f32> = (0..1024)
+            .map(|i| (2.0 * PI * 440.0 * i as f32 / sr).cos() * 0.5)
+            .collect();
+
+        let mut dispatched = ResonatorBank::from_frequencies(&freqs, sr);
+        let mut forced = ResonatorBank::from_frequencies(&freqs, sr);
+        for &s in &signal {
+            dispatched.process_sample(s);
+            forced.process_sample_scalar(s);
+        }
+        for k in 0..freqs.len() {
+            let tol = 1e-4 * (1.0 + dispatched.rr_re[k].abs() + dispatched.rr_im[k].abs());
+            assert!(
+                (dispatched.rr_re[k] - forced.rr_re[k]).abs() < tol
+                    && (dispatched.rr_im[k] - forced.rr_im[k]).abs() < tol,
+                "bin {k}: dispatched=({},{}) scalar=({},{})",
+                dispatched.rr_re[k], dispatched.rr_im[k],
+                forced.rr_re[k], forced.rr_im[k],
+            );
         }
     }
 
