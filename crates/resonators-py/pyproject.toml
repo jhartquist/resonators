@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "resonators"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Rust implementation of the Resonate algorithm for low-latency spectral analysis."
 readme = "README.md"
 requires-python = ">=3.9"
