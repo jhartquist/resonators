@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file. Format base
 
 ### Security
 
-- Python: bump `pyo3` and `numpy` (rust-numpy) from 0.28 to 0.29, resolving RUSTSEC-2026-0176 (out-of-bounds read in `PyList` / `PyTuple` iterators) and RUSTSEC-2026-0177 (missing `Sync` bound on `PyCFunction::new_closure`). The bindings never call the affected APIs, so the shipped wheel was not exploitable; this clears `cargo audit` and `pip-audit`. No public API changes.
+- Python: bump `pyo3` and `numpy` (rust-numpy) from 0.28 to 0.29, resolving RUSTSEC-2026-0176 (out-of-bounds read in `PyList` / `PyTuple` iterators) and RUSTSEC-2026-0177 (missing `Sync` bound on `PyCFunction::new_closure`). The bindings never call the affected APIs, so the shipped wheel was not exploitable; this clears `cargo audit`. No public API changes.
 
 ## [0.1.1] - 2026-04-24
 
