@@ -60,12 +60,14 @@
 pub(crate) const STABILIZE_EVERY: u64 = 256;
 
 mod bank;
+mod bank_onepole;
 mod config;
 mod dynamics;
 mod frequencies;
 mod resonator;
 
 pub use bank::ResonatorBank;
+pub use bank_onepole::OnePoleBank;
 pub use config::ResonatorConfig;
 pub use dynamics::{alpha_from_tau, heuristic_alpha, heuristic_alphas, tau_from_alpha};
 pub use frequencies::midi_to_hz;
